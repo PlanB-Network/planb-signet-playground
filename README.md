@@ -1,4 +1,4 @@
-# ₿ Plan B Signet Playground
+# Plan ₿ Signet Playground
 
 **A private Bitcoin network built for learning — where every cohort can build, experiment, and break things without consequences.**
 
