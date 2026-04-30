@@ -255,6 +255,8 @@ The compose file binds `127.0.0.1:8080` only.
 For anything public, front with nginx + Let's Encrypt rather than
 exposing `:8080` directly.
 
+See details in [mempool-web.log](mempool-web.log)
+
 ## Frontend customization (optional, not yet applied)
 
 To brand the explorer as "PlanB Signet", see the frontend customization

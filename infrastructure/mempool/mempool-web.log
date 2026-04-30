@@ -1,0 +1,29 @@
+# Expose mempool.space frontend to the public internet
+# Machine: flagrant-feedback (user: install), 2026-04-30
+
+## 1. Change port binding in docker-compose.yml
+
+sed -i 's/127.0.0.1:8080:8080/0.0.0.0:8080:8080/' ~/mempool-space/docker-compose.yml
+
+# Verify:
+grep 'ports' -A2 ~/mempool-space/docker-compose.yml
+# Expected:
+#   ports:
+#     - "0.0.0.0:8080:8080"
+
+## 2. Open firewall
+
+sudo ufw allow 8080/tcp
+
+# Note: UFW was inactive on this host, so no traffic was being blocked.
+# Rule added for when UFW is enabled in future.
+
+## 3. Recreate web container to pick up new port binding
+
+sg docker -c "docker compose -f ~/mempool-space/docker-compose.yml up -d --force-recreate web"
+
+# Verify:
+sg docker -c "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+# Expected: mempool-space-web-1   Up ...   0.0.0.0:8080->8080/tcp
+
+## Result: http://86.104.228.47:8080 is now publicly accessible.
