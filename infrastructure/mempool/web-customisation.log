@@ -1,0 +1,201 @@
+# Frontend customisation — step-by-step runbook
+# Target: flagrant-feedback, user install, ~/mempool-space (v3.3.1)
+# Prerequisites: repo cloned, db + api containers running, stack serving on :8080
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 1 — Fix repo-level nginx/Docker bugs in v3.3.1
+# (only needed on a fresh clone; already applied on flagrant-feedback)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 1a. nginx.conf: fix listen port (hardcoded 127.0.0.1:80 → template var)
+sed -i 's|listen 127.0.0.1:80;|listen __MEMPOOL_FRONTEND_HTTP_PORT__;|' \
+  ~/mempool-space/nginx.conf
+
+# 1b. nginx.conf: fix include path (wrong location → conf.d where file lives)
+sed -i 's|include /etc/nginx/nginx-mempool.conf;|include /etc/nginx/conf.d/nginx-mempool.conf;|' \
+  ~/mempool-space/nginx.conf
+
+# 1c. nginx-mempool.conf: replace hardcoded 127.0.0.1:8999 with template vars
+#     (127.0.0.1 is localhost *inside* the web container — unreachable;
+#      entrypoint.sh substitutes the api container hostname at runtime)
+sed -i \
+  's|http://127.0.0.1:8999/|http://__MEMPOOL_BACKEND_MAINNET_HTTP_HOST__:__MEMPOOL_BACKEND_MAINNET_HTTP_PORT__/|g' \
+  ~/mempool-space/nginx-mempool.conf
+sed -i \
+  's|http://127.0.0.1:8999/api/v1|http://__MEMPOOL_BACKEND_MAINNET_HTTP_HOST__:__MEMPOOL_BACKEND_MAINNET_HTTP_PORT__/api/v1|g' \
+  ~/mempool-space/nginx-mempool.conf
+
+# 1d. entrypoint.sh: align sed paths with the conf.d location
+sed -i \
+  's|/etc/nginx/nginx-mempool.conf|/etc/nginx/conf.d/nginx-mempool.conf|g' \
+  ~/mempool-space/docker/frontend/entrypoint.sh
+
+# Verify
+grep 'listen\|include /etc/nginx/conf' ~/mempool-space/nginx.conf | tail -3
+# Expect:
+#   listen __MEMPOOL_FRONTEND_HTTP_PORT__;
+#   include /etc/nginx/conf.d/nginx-mempool.conf;
+
+grep 'proxy_pass http' ~/mempool-space/nginx-mempool.conf
+# Expect: all lines now contain __MEMPOOL_BACKEND_MAINNET_HTTP_HOST__
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 2 — Apply PlanB branding to the Angular frontend source
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 2a. SVG logo
+#     Replaces the mempoolSpace SVG variant (used on all non-official instances)
+#     with a two-row layout: "mempool" (white, upper row) + "planb" (orange, lower row).
+#     Covers all three logo locations: desktop navbar, mobile navbar, footer.
+
+python3 << 'PYEOF'
+SVG_FILE = '/home/install/mempool-space/frontend/src/app/components/svg-images/svg-images.component.html'
+
+with open(SVG_FILE, 'r') as f:
+    lines = f.readlines()
+
+assert lines[120].strip().startswith("<ng-container *ngSwitchCase=\"'mempoolSpace'\""), \
+    f"Unexpected content at line 121: {lines[120]}"
+assert lines[140].strip().startswith("<ng-container *ngSwitchCase=\"'mempoolSquare'\""), \
+    f"Unexpected content at line 141: {lines[140]}"
+
+new_svg = '''\
+    <svg [class]="class" [style]="style" [attr.width]="width" [attr.height]="height" [attr.viewBox]="viewBox" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M219.548 56.1979V33.8327C219.548 30.3587 218.746 27.6863 217.163 25.9185C215.601 24.1507 213.237 23.2667 210.195 23.2667C206.762 23.2667 203.946 24.3768 202.013 26.453C200.081 28.5497 199.053 31.6331 199.053 35.395V56.2185H191.447V33.8327C191.447 26.823 188.282 23.2667 182.032 23.2667C178.6 23.2667 175.783 24.3768 173.851 26.453C171.919 28.5497 170.891 31.6331 170.891 35.395V56.2185H163.285V16.4215H170.685V20.7589C173.687 17.7988 178.003 16.1748 182.999 16.1748C188.96 16.1748 193.667 18.4977 196.36 22.7528C199.608 18.5593 204.85 16.1748 210.955 16.1748C215.93 16.1748 219.877 17.6137 222.693 20.43C225.632 23.3901 227.174 27.8713 227.154 33.3599V56.1979H219.548V56.1979Z" fill="white"/>
+      <path d="M255.397 56.5679C243.145 56.5679 234.594 48.2426 234.594 36.32C234.594 24.644 242.775 16.1748 254.04 16.1748C265.387 16.1748 273.342 24.459 273.383 36.32C273.383 36.4433 273.363 36.5872 273.363 36.7106C273.342 36.8339 273.342 36.9367 273.342 37.0395V37.1011L273.322 37.1628C273.281 37.3684 273.281 37.5945 273.281 37.8617V39.1568H242.343C243.412 45.4881 248.49 49.5377 255.5 49.5377C259.796 49.5377 263.393 47.996 265.901 45.0975L266.888 44.008L271.41 49.1677L270.732 50.0516C267.196 54.2451 261.749 56.5679 255.397 56.5679ZM265.798 32.846C265.284 30.0503 263.989 27.6658 262.036 25.9185C259.919 24.0273 257.144 23.0406 254.061 23.0406C250.998 23.0406 248.264 24.0273 246.146 25.9185C244.194 27.6658 242.919 30.0503 242.405 32.846H265.798Z" fill="white"/>
+      <path d="M337.274 56.198V33.8327C337.274 30.3587 336.473 27.6864 334.89 25.9185C333.328 24.1507 330.964 23.2668 327.921 23.2668C324.488 23.2668 321.672 24.3768 319.74 26.453C317.808 28.5497 316.78 31.6332 316.78 35.395V56.2185H309.174V33.8327C309.174 26.823 306.008 23.2668 299.759 23.2668C296.326 23.2668 293.51 24.3768 291.578 26.453C289.645 28.5497 288.618 31.6332 288.618 35.395V56.2185H281.012V16.4215H288.412V20.7589C291.413 17.7782 295.73 16.1543 300.725 16.1543C306.687 16.1543 311.394 18.4772 314.087 22.7323C317.335 18.5388 322.577 16.1543 328.682 16.1543C333.656 16.1543 337.603 17.5932 340.419 20.4095C343.359 23.3696 344.901 27.8508 344.88 33.3394V56.1774H337.274V56.198Z" fill="white"/>
+      <path d="M354.297 69.9296V16.4215H361.697V21.3139C364.986 17.9427 369.467 16.1543 374.75 16.1543C386.241 16.1543 394.567 24.6235 394.567 36.2995C394.567 48.0371 386.241 56.5474 374.75 56.5474C369.57 56.5474 365.171 54.8413 361.923 51.5728V69.909H354.297V69.9296ZM374.422 23.1023C367.021 23.1023 361.841 28.5292 361.841 36.32C361.841 44.1109 367.021 49.5377 374.422 49.5377C381.822 49.5377 387.002 44.1109 387.002 36.32C387.002 28.6525 381.719 23.1023 374.422 23.1023Z" fill="white"/>
+      <path d="M420.321 56.5679C408.604 56.5679 400.094 48.0576 400.094 36.32C400.094 24.644 408.604 16.1748 420.321 16.1748C425.995 16.1748 431.134 18.2099 434.813 21.91C438.472 25.5896 440.466 30.7081 440.446 36.3405C440.446 48.0576 431.977 56.5679 420.321 56.5679ZM420.321 23.1023C412.921 23.1023 407.741 28.5291 407.741 36.32C407.741 44.1108 412.921 49.5377 420.321 49.5377C427.66 49.5377 432.799 44.1108 432.799 36.32C432.778 28.5291 427.66 23.1023 420.321 23.1023Z" fill="white"/>
+      <path d="M464.598 56.5679C452.881 56.5679 444.371 48.0576 444.371 36.32C444.371 24.644 452.881 16.1748 464.598 16.1748C476.254 16.1748 484.723 24.644 484.723 36.32C484.723 48.0576 476.254 56.5679 464.598 56.5679ZM464.598 23.1023C457.198 23.1023 452.018 28.5291 452.018 36.32C452.018 44.1108 457.198 49.5377 464.598 49.5377C471.937 49.5377 477.076 44.1108 477.076 36.32C477.076 28.5291 471.958 23.1023 464.598 23.1023Z" fill="white"/>
+      <path d="M499.996 1.14844H492.391V56.1982H499.996V1.14844Z" fill="white"/>
+      <text x="163" y="112" fill="#FF6B35" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="40" font-weight="600" letter-spacing="3">planb</text>
+      <path d="M124.706 110.25C124.706 118.849 117.772 125.791 109.183 125.791H15.5236C6.93387 125.791 0 118.849 0 110.25V16.4837C0 7.88416 6.98561 0.942383 15.5236 0.942383H109.183C117.772 0.942383 124.706 7.88416 124.706 16.4837V110.25Z" fill="#2E3349"/>
+      <path d="M0 63.5225V110.25C0 118.849 6.98561 125.791 15.5753 125.791H109.183C117.772 125.791 124.758 118.849 124.758 110.25V63.5225H0Z" [attr.fill]="'url(#paint0_linear' + randomId + ')'"/>
+      <path opacity="0.3" d="M109.909 109.11C109.909 111.026 108.615 112.581 107.011 112.581H90.8665C89.2624 112.581 87.9688 111.026 87.9688 109.11V17.6232C87.9688 15.7065 89.2624 14.1523 90.8665 14.1523H107.011C108.615 14.1523 109.909 15.7065 109.909 17.6232V109.11Z" fill="white"/>
+      <defs>
+        <linearGradient [id]="'paint0_linear' + randomId" x1="62.3768" y1="36.3949" x2="62.3768" y2="156.837" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#AE61FF"/>
+          <stop offset="1" stop-color="#13EFD8"/>
+        </linearGradient>
+      </defs>
+    </svg>
+'''
+
+new_lines = lines[:121] + [new_svg] + lines[139:]
+
+with open(SVG_FILE, 'w') as f:
+    f.writelines(new_lines)
+
+print(f"SVG done. Lines: {len(lines)} → {len(new_lines)}")
+PYEOF
+# Expect: SVG done. Lines: 802 → 785
+
+# 2b. Footer tagline (3 instances: mobile, desktop, footer link)
+python3 << 'PYEOF'
+path = '/home/install/mempool-space/frontend/src/app/shared/components/global-footer/global-footer.component.html'
+with open(path, 'r') as f:
+    content = f.read()
+
+# Mobile + desktop tagline instances (trade mark on next line)
+old1 = '<ng-container i18n="shared.be-your-own-explorer">Be your own explorer</ng-container>\n              <ng-template [ngIf]="locale.substr(0, 2) === \'en\'\">&trade;</ng-template>'
+new1 = '<ng-container i18n="shared.be-your-own-explorer">PlanB Network signet playground</ng-container>'
+result = content.replace(old1, new1)
+
+# Footer link instance (trade mark inline)
+old2 = '<ng-container i18n="shared.be-your-own-explorer">Be your own explorer</ng-container><ng-template [ngIf]="locale.substr(0, 2) === \'en\'\">&trade;</ng-template>'
+new2 = '<ng-container i18n="shared.be-your-own-explorer">PlanB Network signet playground</ng-container>'
+result = result.replace(old2, new2)
+
+replaced = content.count('Be your own explorer') - result.count('Be your own explorer')
+print(f"Footer tagline: replaced {replaced}/3")
+
+with open(path, 'w') as f:
+    f.write(result)
+PYEOF
+# Expect: Footer tagline: replaced 3/3
+
+# 2c. About page heading (1 instance)
+python3 << 'PYEOF'
+path = '/home/install/mempool-space/frontend/src/app/components/about/about.component.html'
+with open(path, 'r') as f:
+    content = f.read()
+
+old = '<ng-container i18n="shared.be-your-own-explorer">Be your own explorer</ng-container><ng-template [ngIf]="locale.substr(0, 2) === \'en\'\">&trade;</ng-template>'
+new = '<ng-container i18n="shared.be-your-own-explorer">PlanB Network signet playground</ng-container>'
+result = content.replace(old, new)
+
+replaced = content.count('Be your own explorer') - result.count('Be your own explorer')
+print(f"About heading: replaced {replaced}/1 (1 remaining = legal text, leave it)")
+
+with open(path, 'w') as f:
+    f.write(result)
+PYEOF
+# Expect: About heading: replaced 1/1 (1 remaining = legal text, leave it)
+
+# 2d. Browser tab title
+sed -i \
+  's|<title>mempool - Bitcoin Explorer</title>|<title>mempool Planb signet</title>|' \
+  ~/mempool-space/frontend/src/index.mempool.html
+
+grep '<title>' ~/mempool-space/frontend/src/index.mempool.html
+# Expect: <title>mempool Planb signet</title>
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3 — Stage auxiliary files into the frontend/ build context
+# (these files live elsewhere in the repo but must be present for docker build)
+# ─────────────────────────────────────────────────────────────────────────────
+
+cp ~/mempool-space/docker/frontend/entrypoint.sh ~/mempool-space/frontend/
+cp ~/mempool-space/docker/frontend/wait-for       ~/mempool-space/frontend/
+cp ~/mempool-space/nginx.conf                     ~/mempool-space/frontend/
+cp ~/mempool-space/nginx-mempool.conf             ~/mempool-space/frontend/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 4 — Build the custom Docker image
+# (Node/Angular build stage takes ~5 min; nginx stage is fast)
+# ─────────────────────────────────────────────────────────────────────────────
+
+cd ~/mempool-space
+docker build -t planb-mempool-frontend:latest \
+  -f docker/frontend/Dockerfile frontend/
+
+# Expect last line: Successfully tagged planb-mempool-frontend:latest
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — Point docker-compose.yml at the custom image
+# ─────────────────────────────────────────────────────────────────────────────
+
+sed -i \
+  's|image: mempool/frontend:latest|image: planb-mempool-frontend:latest|' \
+  ~/mempool-space/docker-compose.yml
+
+grep 'image:' ~/mempool-space/docker-compose.yml
+# Expect: image: planb-mempool-frontend:latest   (web service)
+#         image: mempool/backend:latest            (api — unchanged)
+#         image: mariadb:10.5.21                   (db  — unchanged)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6 — Deploy
+# ─────────────────────────────────────────────────────────────────────────────
+
+docker compose -f ~/mempool-space/docker-compose.yml up -d --no-deps web
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 7 — Verify
+# ─────────────────────────────────────────────────────────────────────────────
+
+sleep 8
+docker ps --filter name=web
+# Expect: Up X seconds   0.0.0.0:8080->8080/tcp   (no "Restarting")
+
+curl -s http://127.0.0.1:8080/ | grep '<title>'
+# Expect: <title>mempool Planb signet</title>
+
+docker logs mempool-space-web-1 2>&1 | grep -v warn
+# Expect: no [emerg] or [error] lines
+
+# Open http://<host-ip>:8080 in a browser and confirm:
+#   - Logo top-left: "mempool" (white) above "planb" (orange)
+#   - Footer logo: same
+#   - Footer tagline: "PlanB Network signet playground"
+#   - Browser tab: "mempool Planb signet"
