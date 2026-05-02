@@ -1,11 +1,9 @@
-# Overview of the mempool install for the PlanB custom signet
+# Overview of the mempool install for PlanB signet playground
 
 Objective: spin up a [mempool.space](https://mempool.space)-style
 block explorer that serves our custom signet to students.
 
 Validated on Ubuntu 24.04 (host `flagrant-feedback`, user `install`), April 2026.
-
-Find detailed log [here](mempool-install.log).
 
 ## What gets deployed
 
@@ -255,13 +253,9 @@ The compose file binds `127.0.0.1:8080` only.
 For anything public, front with nginx + Let's Encrypt rather than
 exposing `:8080` directly.
 
-See details in [mempool-web.log](mempool-web.log)
+## Frontend customization (applied 2026-05-01)
 
-## Frontend customization (optional, not yet applied)
-
-To brand the explorer as "PlanB Signet", see the frontend customization
-notes in the git history of this file. This involves building a custom
-frontend Docker image with title, wordmark, and network-switcher changes.
+See [web-customisation.md](web-customisation.md) for full details.
 
 ## Troubleshooting
 
