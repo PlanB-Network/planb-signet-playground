@@ -58,3 +58,47 @@ tail -f ~/.bitcoin/signet/debug.log       # live log
 
 After installing bitcoind, run [`../lnd/deploy-lnd-signet.sh`](../lnd/) to
 add a Lightning node on top.
+
+## Mining (install only)
+
+`mine-blocks.sh` produces signet blocks on demand. It's restricted to the
+`install` user — the `miner` wallet (which holds the private key for the
+network's `signetchallenge`) is only loaded in install's bitcoind, and the
+script's `$USER` guard rejects anyone else.
+
+```bash
+# Run as 'install':
+bash mine-blocks.sh <count> <interval-seconds>
+
+# Examples:
+bash mine-blocks.sh 10 60       # 10 blocks, one per minute (10 min total)
+bash mine-blocks.sh 3 5         # quick smoke test
+```
+
+For long runs, detach so it survives logout:
+
+```bash
+nohup bash mine-blocks.sh 200 60 > ~/.bitcoin/miner-oneoff.log 2>&1 & disown
+tail -f ~/.bitcoin/miner-oneoff.log
+```
+
+### Behind the scenes
+
+Each iteration calls Bitcoin Core's `contrib/signet/miner generate` with:
+
+- `--set-block-time=$(date +%s)` — stamps the block with wall-clock time.
+  Without this, the miner uses `prev_block_time + 600s` and chain time
+  drifts behind real time.
+- `--nbits=1e0377ae` — keeps the difficulty stable; grinding takes <1s.
+- `--grind-cmd='bitcoin-util grind'` — for proof-of-work search.
+
+Coinbase rewards go to a single address persisted at
+`~/.bitcoin/miner-oneoff-address` (auto-generated on first run). Delete
+the file to rotate.
+
+### Stopping a background run
+
+```bash
+pkill -f '/tmp/mine-blocks\.sh [0-9]'
+# or kill the PID printed by 'nohup ... &'
+```
