@@ -243,6 +243,11 @@ mkdir -p ~/mempool-space/mysql/data ~/mempool-space/data
 docker compose -f ~/mempool-space/docker-compose.yml up -d
 ```
 
+## Frontend customization (applied 2026-05-01)
+
+See [web-customisation.md](web-customisation.md) for full details.
+
+
 ## Exposing to students
 
 The compose file binds `127.0.0.1:8080` only.
@@ -253,9 +258,28 @@ The compose file binds `127.0.0.1:8080` only.
 For anything public, front with nginx + Let's Encrypt rather than
 exposing `:8080` directly.
 
-## Frontend customization (applied 2026-05-01)
 
-See [web-customisation.md](web-customisation.md) for full details.
+## Exposing via domain name (applied 2026-05-04)
+
+The explorer is accessible at **https://mempool-signet.planb.academy**.
+
+A DNS `A` record points `mempool-signet.planb.academy` to the VPS IP (`86.104.228.47`). On the host, **Caddy** (v2) acts as the reverse proxy and handles TLS automatically via Let's Encrypt. The entire config lives in `/etc/caddy/Caddyfile`:
+
+```
+{
+    email asi0@decouvrebitcoin.com
+}
+
+mempool-signet.planb.academy {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Caddy listens on `:80` and `:443`, terminates TLS, and forwards plain HTTP to the `web` container on `127.0.0.1:8080` (which remains loopback-only — not directly reachable from the internet). Caddy requests and renews the Let's Encrypt certificate automatically; no Certbot or manual cert management is required.
+
+The firewall must allow inbound `80/tcp` and `443/tcp` in addition to the existing `8080/tcp` rule (which can be removed once Caddy is in place).
+
+
 
 ## Troubleshooting
 
