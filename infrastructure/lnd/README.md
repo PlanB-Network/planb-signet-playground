@@ -77,7 +77,7 @@ deployed.
 
 The mining/signing node `install` was set up **manually** before this
 script existed, so it does NOT use `noseedbackup=true`. Its wallet is
-encrypted with the password `helloworld` and unlocks via a password
+encrypted and unlocks via a password
 file rather than the LND default. The relevant lines in
 `/home/install/.lnd-signet/lnd.conf`:
 
@@ -87,13 +87,12 @@ wallet-unlock-password-file=/home/install/.lnd-signet/wallet-password
 ```
 
 `/home/install/.lnd-signet/wallet-password` is mode `0600`, owned by
-`install`, and contains the literal string `helloworld` with **no
-trailing newline** (`printf 'helloworld' > ...`).
+`install` 
 
 `tlsextradomain=host.docker.internal` was added so the mempool docker
 `api` container can reach LND's REST endpoint via the Docker bridge with
 TLS hostname verification intact (see
-[`../mempool/lightning-tab-plan.md`](../mempool/lightning-tab-plan.md)).
+[`../mempool/claude-plans/lightning-tab-plan.md`](../mempool/claude-plans/lightning-tab-plan.md)).
 
 `install`'s LND runs under `systemd` (unit `lnd-signet.service`), not
 the `@reboot` cron used by the script-deployed nodes.
