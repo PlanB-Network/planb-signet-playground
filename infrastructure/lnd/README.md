@@ -72,3 +72,28 @@ tail -f ~/.lnd-signet/lnd.log      # live log
 To get test signet coins, ask the miner (user `install`) to send to your
 address from its bitcoind wallet, or use the playground faucet once it's
 deployed.
+
+## `install`'s LND is different (predates this script)
+
+The mining/signing node `install` was set up **manually** before this
+script existed, so it does NOT use `noseedbackup=true`. Its wallet is
+encrypted with the password `helloworld` and unlocks via a password
+file rather than the LND default. The relevant lines in
+`/home/install/.lnd-signet/lnd.conf`:
+
+```ini
+tlsextradomain=host.docker.internal
+wallet-unlock-password-file=/home/install/.lnd-signet/wallet-password
+```
+
+`/home/install/.lnd-signet/wallet-password` is mode `0600`, owned by
+`install`, and contains the literal string `helloworld` with **no
+trailing newline** (`printf 'helloworld' > ...`).
+
+`tlsextradomain=host.docker.internal` was added so the mempool docker
+`api` container can reach LND's REST endpoint via the Docker bridge with
+TLS hostname verification intact (see
+[`../mempool/lightning-tab-plan.md`](../mempool/lightning-tab-plan.md)).
+
+`install`'s LND runs under `systemd` (unit `lnd-signet.service`), not
+the `@reboot` cron used by the script-deployed nodes.
