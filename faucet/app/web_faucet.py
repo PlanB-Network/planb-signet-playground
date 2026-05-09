@@ -10,62 +10,145 @@ import subprocess
 import json
 import sqlite3
 import time
+import threading
+from contextlib import closing
+from decimal import Decimal
+from pathlib import Path
 from flask import Flask, request, render_template_string, session, redirect, url_for, jsonify
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'signet-faucet-key-x9f2z'
 
-DB_PATH = '/home/gabor/faucet.db'
-RATE_LIMIT_HOURS = 0  # Set to 24 before going public
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {'1', 'true', 'yes', 'on'}
+
+def env_int(name, default):
+    return int(os.getenv(name, str(default)))
+
+def env_decimal(name, default):
+    return Decimal(os.getenv(name, str(default)))
+
+def required_env(name):
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f'{name} must be set in the environment')
+    return value
+
+if env_bool('ALLOW_INSECURE_DEV_SECRET'):
+    app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-only-signet-faucet-secret')
+else:
+    app.secret_key = required_env('FLASK_SECRET_KEY')
+
+DB_PATH = os.getenv('DB_PATH', './faucet.db')
+LOG_DIR = os.getenv('LOG_DIR', './logs')
+RATE_LIMIT_HOURS = env_int('RATE_LIMIT_HOURS', 24)
+BTC_DAILY_LIMIT_SATS = env_int('BTC_DAILY_LIMIT_SATS', 1_000_000)
+LN_DAILY_LIMIT_SATS = env_int('LN_DAILY_LIMIT_SATS', 100_000)
+EXPLORER_URL = os.getenv('EXPLORER_URL', 'https://mempool-signet.planb.academy')
+
+# RPC connection
+RPC_USER = required_env('RPC_USER')
+RPC_PASSWORD = required_env('RPC_PASSWORD')
+RPC_HOST = os.getenv('RPC_HOST', '127.0.0.1')
+RPC_PORT = env_int('RPC_PORT', 38332)
+RPC_WALLET = os.getenv('RPC_WALLET', 'test-wallet')
+
+# Faucet settings
+AMOUNT = env_decimal('BTC_AMOUNT', '0.001')
+LN_MAX_SATS = env_int('LN_MAX_SATS', 10000)
+LNCLI_BIN = os.getenv('LNCLI_BIN', 'lncli')
+LND_DIR = os.getenv('LND_DIR', str(Path.home() / '.lnd-signet'))
+LND_RPCSERVER = os.getenv('LND_RPCSERVER', '127.0.0.1:10010')
+LNCLI_BASE = [LNCLI_BIN, f'--lnddir={LND_DIR}', f'--rpcserver={LND_RPCSERVER}']
+
+DB_LOCK = threading.Lock()
+SEND_LOCK = threading.Lock()
+SATOSHIS_PER_BTC = Decimal('100000000')
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute('CREATE TABLE IF NOT EXISTS btc_requests (address TEXT, ts INTEGER)')
-    conn.execute('CREATE TABLE IF NOT EXISTS ln_requests (ip TEXT, ts INTEGER)')
-    conn.commit()
-    conn.close()
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
+    with closing(get_db()) as conn:
+        conn.execute('CREATE TABLE IF NOT EXISTS btc_requests (address TEXT, ip TEXT, amount_sats INTEGER DEFAULT 0, txid TEXT, ts INTEGER)')
+        conn.execute('CREATE TABLE IF NOT EXISTS ln_requests (ip TEXT, amount_sats INTEGER DEFAULT 0, payment_hash TEXT, ts INTEGER)')
+        columns = {row['name'] for row in conn.execute('PRAGMA table_info(btc_requests)')}
+        if 'ip' not in columns:
+            conn.execute('ALTER TABLE btc_requests ADD COLUMN ip TEXT')
+        if 'amount_sats' not in columns:
+            conn.execute('ALTER TABLE btc_requests ADD COLUMN amount_sats INTEGER DEFAULT 0')
+        if 'txid' not in columns:
+            conn.execute('ALTER TABLE btc_requests ADD COLUMN txid TEXT')
+        columns = {row['name'] for row in conn.execute('PRAGMA table_info(ln_requests)')}
+        if 'amount_sats' not in columns:
+            conn.execute('ALTER TABLE ln_requests ADD COLUMN amount_sats INTEGER DEFAULT 0')
+        if 'payment_hash' not in columns:
+            conn.execute('ALTER TABLE ln_requests ADD COLUMN payment_hash TEXT')
+        conn.commit()
 
-def is_btc_rate_limited(address):
-    conn = sqlite3.connect(DB_PATH)
+def is_btc_rate_limited(address, ip):
+    if RATE_LIMIT_HOURS <= 0:
+        return False
     cutoff = int(time.time()) - RATE_LIMIT_HOURS * 3600
-    row = conn.execute('SELECT ts FROM btc_requests WHERE address=? AND ts>?', (address, cutoff)).fetchone()
-    conn.close()
+    with closing(get_db()) as conn:
+        row = conn.execute(
+            'SELECT ts FROM btc_requests WHERE (address=? OR ip=?) AND ts>? LIMIT 1',
+            (address, ip, cutoff),
+        ).fetchone()
     return row is not None
 
-def record_btc_request(address):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute('INSERT INTO btc_requests (address, ts) VALUES (?,?)', (address, int(time.time())))
-    conn.commit()
-    conn.close()
+def record_btc_request(address, ip, amount_sats, txid):
+    with DB_LOCK, closing(get_db()) as conn:
+        conn.execute(
+            'INSERT INTO btc_requests (address, ip, amount_sats, txid, ts) VALUES (?,?,?,?,?)',
+            (address, ip, amount_sats, txid, int(time.time())),
+        )
+        conn.commit()
 
 def is_ln_rate_limited(ip):
-    conn = sqlite3.connect(DB_PATH)
+    if RATE_LIMIT_HOURS <= 0:
+        return False
     cutoff = int(time.time()) - RATE_LIMIT_HOURS * 3600
-    row = conn.execute('SELECT ts FROM ln_requests WHERE ip=? AND ts>?', (ip, cutoff)).fetchone()
-    conn.close()
+    with closing(get_db()) as conn:
+        row = conn.execute('SELECT ts FROM ln_requests WHERE ip=? AND ts>?', (ip, cutoff)).fetchone()
     return row is not None
 
-def record_ln_request(ip):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute('INSERT INTO ln_requests (ip, ts) VALUES (?,?)', (ip, int(time.time())))
-    conn.commit()
-    conn.close()
+def record_ln_request(ip, amount_sats, payment_hash=None):
+    with DB_LOCK, closing(get_db()) as conn:
+        conn.execute(
+            'INSERT INTO ln_requests (ip, amount_sats, payment_hash, ts) VALUES (?,?,?,?)',
+            (ip, amount_sats, payment_hash, int(time.time())),
+        )
+        conn.commit()
+
+def distributed_today(table):
+    today_start = int(time.time()) - (int(time.time()) % 86400)
+    with closing(get_db()) as conn:
+        row = conn.execute(f'SELECT COALESCE(SUM(amount_sats), 0) AS total FROM {table} WHERE ts>=?', (today_start,)).fetchone()
+    return int(row['total'])
+
+def last_drips(limit=10):
+    with closing(get_db()) as conn:
+        btc = [dict(row) for row in conn.execute('SELECT "btc" AS type, address, ip, amount_sats, txid, ts FROM btc_requests ORDER BY ts DESC LIMIT ?', (limit,))]
+        ln = [dict(row) for row in conn.execute('SELECT "ln" AS type, NULL AS address, ip, amount_sats, payment_hash AS txid, ts FROM ln_requests ORDER BY ts DESC LIMIT ?', (limit,))]
+    return sorted(btc + ln, key=lambda row: row['ts'], reverse=True)[:limit]
 
 init_db()
 
-# RPC connection
-RPC_USER = 'devuser'
-RPC_PASSWORD = 'devpass123'
-RPC_HOST = '::1'
-RPC_PORT = 38332
-RPC_WALLET = 'test-wallet'
-
-# Faucet settings
-AMOUNT = 0.001
-
 def get_rpc_connection():
-    return AuthServiceProxy(f"http://{RPC_USER}:{RPC_PASSWORD}@[{RPC_HOST}]:{RPC_PORT}/wallet/{RPC_WALLET}")
+    wallet_part = f'/wallet/{RPC_WALLET}' if RPC_WALLET else ''
+    host = f'[{RPC_HOST}]' if ':' in RPC_HOST and not RPC_HOST.startswith('[') else RPC_HOST
+    return AuthServiceProxy(f"http://{RPC_USER}:{RPC_PASSWORD}@{host}:{RPC_PORT}{wallet_part}")
 
 def validate_address(rpc, address):
     try:
@@ -90,12 +173,30 @@ def generate_ln_captcha():
 def verify_ln_captcha(user_input):
     return user_input.strip() == session.get('ln_captcha', '')
 
+def btc_amount_sats():
+    return int(AMOUNT * SATOSHIS_PER_BTC)
+
+def client_ip():
+    return request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+
 def send_coins(rpc, address):
     try:
-        txid = rpc.sendtoaddress(address, AMOUNT)
-        return txid
+        with SEND_LOCK:
+            balance = Decimal(str(rpc.getbalance()))
+            if balance < AMOUNT:
+                return None, f"Insufficient funds. Balance: {balance} signet BTC"
+            txid = rpc.sendtoaddress(address, float(AMOUNT))
+        return txid, None
     except JSONRPCException as e:
-        return str(e)
+        return None, str(e)
+
+@app.after_request
+def set_security_headers(response):
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('Referrer-Policy', 'no-referrer')
+    response.headers.setdefault('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'")
+    return response
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -2969,24 +3070,22 @@ def faucet():
             session['result'] = {'message': "Incorrect code. Please try again.", 'hint': "Look at the 4-digit code displayed above the input box and type it in exactly.", 'success': False}
         else:
             rpc = get_rpc_connection()
+            ip = client_ip()
             if not validate_address(rpc, address):
                 session['result'] = {'message': "Invalid Signet address.", 'hint': "A valid Signet address starts with 'tb1' and is about 42 characters long. Make sure you copied it correctly from your wallet. Do not use a mainnet Bitcoin address here.", 'success': False}
+            elif is_btc_rate_limited(address, ip):
+                session['result'] = {'message': f"This address or IP already received coins in the last {RATE_LIMIT_HOURS} hours.", 'hint': "Each address/device can only request coins once per day. Try again tomorrow, or use a different Signet address from your wallet.", 'success': False}
+            elif distributed_today('btc_requests') + btc_amount_sats() > BTC_DAILY_LIMIT_SATS:
+                session['result'] = {'message': "The faucet reached today's Bitcoin distribution limit.", 'hint': "This anti-abuse ceiling resets daily. Please try again tomorrow.", 'success': False}
             else:
                 try:
-                    balance = rpc.getbalance()
-                    if balance < AMOUNT:
-                        session['result'] = {'message': f"Insufficient funds. Balance: {balance} signet BTC", 'hint': "The faucet wallet has run low on test coins. Please check back later — it will be topped up soon.", 'success': False}
+                    txid, error = send_coins(rpc, address)
+                    if txid:
+                        record_btc_request(address, ip, btc_amount_sats(), txid)
+                        txid_link = f'<a href="{EXPLORER_URL.rstrip("/")}/tx/{txid}" target="_blank" style="color:#f7931a;word-break:break-all;">{txid[:10]}...{txid[-6:]} ↗</a>'
+                        session['result'] = {'message': f"Sent {AMOUNT} signet BTC to {address}. Transaction ID: {txid_link}", 'hint': "Click the Transaction ID link to watch your transaction confirm in real time on the Signet Explorer. Coins appear once the next block is mined.", 'success': True}
                     else:
-                        if is_btc_rate_limited(address):
-                            session['result'] = {'message': f"This address already received coins in the last {RATE_LIMIT_HOURS} hours.", 'hint': "Each address can only request coins once per day. Try again tomorrow, or use a different Signet address from your wallet.", 'success': False}
-                        else:
-                            txid = send_coins(rpc, address)
-                            if txid and not txid.startswith('error'):
-                                record_btc_request(address)
-                                txid_link = f'<a href="https://mempool-signet.planb.academy/tx/{txid}" target="_blank" style="color:#f7931a;word-break:break-all;">{txid[:10]}...{txid[-6:]} ↗</a>'
-                                session['result'] = {'message': f"Sent {AMOUNT} signet BTC to {address}. Transaction ID: {txid_link}", 'hint': "Click the Transaction ID link to watch your transaction confirm in real time on the Signet Explorer. Coins appear once the next block is mined.", 'success': True}
-                            else:
-                                session['result'] = {'message': f"Transaction failed: {txid}", 'hint': "Something went wrong while sending the coins. This can happen if the node is busy or restarting. Please try again in a few minutes.", 'success': False}
+                        session['result'] = {'message': f"Transaction failed: {error}", 'hint': "Something went wrong while sending the coins. This can happen if the node is busy or restarting. Please try again in a few minutes.", 'success': False}
                 except Exception as e:
                     session['result'] = {'message': f"Error: {str(e)}", 'hint': "An unexpected error occurred. Please try again. If the problem persists, the node may be offline or restarting.", 'success': False}
         return redirect(url_for('faucet'))
@@ -3008,14 +3107,14 @@ def faucet():
                                   ln_hint=ln_hint, ln_success=ln_success,
                                   ln_captcha_code=ln_captcha_code)
 
-LNCLI_BASE = ['lncli', '--lnddir=/home/gabor/.lnd-signet', '--rpcserver=127.0.0.1:10010']
-
 @app.route('/api/status')
 def api_status():
     bitcoin_ok = False
+    balance = None
     try:
         rpc = get_rpc_connection()
         rpc.getblockchaininfo()
+        balance = float(rpc.getbalance())
         bitcoin_ok = True
     except Exception:
         pass
@@ -3025,8 +3124,23 @@ def api_status():
         lnd_ok = result.returncode == 0
     except Exception:
         pass
-    return jsonify({'bitcoin': bitcoin_ok, 'lnd': lnd_ok})
-LN_MAX_SATS = 10000
+    return jsonify({
+        'bitcoin': bitcoin_ok,
+        'lnd': lnd_ok,
+        'balance_btc': balance,
+        'limits': {
+            'rate_limit_hours': RATE_LIMIT_HOURS,
+            'btc_amount': str(AMOUNT),
+            'btc_daily_limit_sats': BTC_DAILY_LIMIT_SATS,
+            'ln_max_sats': LN_MAX_SATS,
+            'ln_daily_limit_sats': LN_DAILY_LIMIT_SATS,
+        },
+        'distributed_today': {
+            'btc_sats': distributed_today('btc_requests'),
+            'ln_sats': distributed_today('ln_requests'),
+        },
+        'last_drips': last_drips(),
+    })
 
 @app.route('/lightning', methods=['POST'])
 def lightning_pay():
@@ -3037,8 +3151,8 @@ def lightning_pay():
         session['ln_result'] = {'message': 'Incorrect code. Please try again.', 'hint': 'Look at the 4-digit code displayed above the input box and type it exactly.', 'success': False}
         return redirect(url_for('faucet'))
 
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    if is_ln_rate_limited(client_ip):
+    client_ip_value = client_ip()
+    if is_ln_rate_limited(client_ip_value):
         session['ln_result'] = {'message': f'You already requested Lightning sats in the last {RATE_LIMIT_HOURS} hours.', 'hint': 'Each device can only request sats once per day. Try again tomorrow.', 'success': False}
         return redirect(url_for('faucet'))
 
@@ -3071,6 +3185,10 @@ def lightning_pay():
             session['ln_result'] = {'message': f'Invoice amount ({num_satoshis:,} sats) exceeds the maximum of {LN_MAX_SATS:,} sats per request.', 'hint': f'Generate a new invoice for {LN_MAX_SATS:,} sats or less.', 'success': False}
             return redirect(url_for('faucet'))
 
+        if distributed_today('ln_requests') + num_satoshis > LN_DAILY_LIMIT_SATS:
+            session['ln_result'] = {'message': "The faucet reached today's Lightning distribution limit.", 'hint': 'This anti-abuse ceiling resets daily. Please try again tomorrow.', 'success': False}
+            return redirect(url_for('faucet'))
+
         pay_proc = subprocess.run(
             LNCLI_BASE + ['payinvoice', '--force', invoice],
             capture_output=True, text=True, timeout=60
@@ -3081,7 +3199,7 @@ def lightning_pay():
             session['ln_result'] = {'message': f'Payment failed: {err}', 'hint': 'This can happen if there is no route to your wallet. Make sure your wallet is online and has an open channel to our Signet hub. Try generating a fresh invoice.', 'success': False}
             return redirect(url_for('faucet'))
 
-        record_ln_request(client_ip)
+        record_ln_request(client_ip_value, num_satoshis, decoded.get('payment_hash'))
         session['ln_result'] = {'message': f'Sent {num_satoshis:,} sats! Check your Lightning wallet — it should arrive instantly.', 'hint': 'If the sats do not appear, make sure your wallet app is open and online. Lightning payments are instant but require both sides to be connected.', 'success': True}
 
     except subprocess.TimeoutExpired:
