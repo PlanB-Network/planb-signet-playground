@@ -6,21 +6,29 @@
 
 Showcase education + payments end-to-end: a user answers questions, gets paid in real-feeling sats over Lightning. One quiz per day, no gaming.
 
+## Status
+
+V0 imported from [`DanieleSK/quiz-planB`](https://github.com/DanieleSK/quiz-planB)
+(authors: DanieleSK, Simone Da Re). Code now lives in [`./app/`](./app/) — see
+[`app/README.md`](./app/README.md) for run + deploy instructions.
+
 ## Deliverables
 
-- [ ] Quiz content extraction from the BEC repo
-  - Source: [`PlanB-Network/bitcoin-educational-content`](https://github.com/PlanB-Network/bitcoin-educational-content) — e.g. `courses/btc101/quizz/003/en.yml`
-- [ ] Quiz UX: one set per day, scoring, immediate feedback, **one attempt per user per day**
-- [ ] Payout flow:
-  - [ ] **Open question:** custodial wallet on our side, OR bring-your-own wallet with a pre-opened channel? Decide before week 1 ends.
-  - [ ] Send sats automatically on correct answers
-- [ ] Minimal user identity (email, LN address, or NIP-05 — pick one and document why)
-- [ ] Winner log / audit trail (who got how many sats, when)
+- [x] Quiz content extraction from the BEC repo
+  - Source: [`PlanB-Network/bitcoin-educational-content`](https://github.com/PlanB-Network/bitcoin-educational-content) — pulled live from `courses/btc101/quizz/<id>/en.yml` (21 questions)
+- [x] Quiz UX: one set per day, scoring, immediate feedback, **one attempt per user per day**
+- [x] Payout flow:
+  - [x] **Decision:** both paths shipped — custodial wallet (default, created by `/api/create-user`) with LNURL fallback for users who bring their own Lightning address.
+  - [x] Send sats automatically on correct answers (1500 sats on 5/5)
+- [x] Minimal user identity — Lightning address (one identifier that doubles as a payout target, shared with the faucet flow)
+- [x] Winner log / audit trail (who got how many sats, when) — SQLite `attempts` + `payments` tables
 
-## Stack (suggested — open to change)
+Open items for V1 / VPS deploy are tracked in [`app/README.md`](./app/README.md#open-items-before-v1-ships).
 
-- Frontend: React + TypeScript
-- Backend: Node or Python (your call — biz student should not have to read it)
+## Stack (as shipped)
+
+- Backend: Node 20 + Express 5 + SQLite (single `server.js`)
+- Frontend: vanilla HTML/JS served from `app/public/`
 - Payouts: LNbits API (against Squad 3's LNbits instance)
 
 ## Dependencies
@@ -31,8 +39,8 @@ Showcase education + payments end-to-end: a user answers questions, gets paid in
 
 ## Team
 
-- 2 biz — *open*
-- 2 devs — *open* (lead TBD)
+- 2 biz — _open_
+- 2 devs — _open_ (lead TBD)
 - Confirmed: Dan_sk1
 - Support: asi0
 
