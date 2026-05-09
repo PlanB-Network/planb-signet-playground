@@ -1,493 +1,743 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Plan B Campus Cash ⚡</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1d; color: #ffffff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-    .container { background: #2d2d30; padding: 30px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.5); max-width: 520px; width: 100%; text-align: center; }
-    h1 { color: #f7931a; margin-bottom: 20px; }
-    h3 { margin-bottom: 16px; line-height: 1.5; }
-    .screen { display: none; }
-    .screen.active { display: block; }
-    .score-bar { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; color: #aaa; }
-    .score-bar span { color: #f7931a; font-weight: bold; font-size: 16px; }
-    .btn-option { display: block; width: 100%; padding: 14px; margin: 8px 0; background: #444; border: none; color: white; border-radius: 8px; cursor: pointer; font-size: 15px; transition: 0.2s; text-align: left; }
-    .btn-option:hover:not(:disabled) { background: #f7931a; color: #1a1a1d; font-weight: bold; }
-    .btn-option.correct { background: #28a745 !important; color: white; font-weight: bold; }
-    .btn-option.wrong { background: #dc3545 !important; color: white; }
-    .btn-option:disabled { cursor: not-allowed; opacity: 0.8; }
-    #feedback { margin-top: 14px; padding: 12px; border-radius: 8px; font-weight: bold; display: none; }
-    #feedback.correct { background: rgba(40,167,69,0.2); color: #28a745; border: 1px solid #28a745; }
-    #feedback.wrong { background: rgba(220,53,69,0.2); color: #dc3545; border: 1px solid #dc3545; }
-    .btn-primary { background: #f7931a; color: #1a1a1d; font-weight: bold; padding: 14px 28px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; margin-top: 16px; width: 100%; transition: 0.2s; }
-    .btn-primary:hover:not(:disabled) { background: #e6820f; }
-    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; background: #f7931a; }
-    .btn-secondary { background: #555; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; margin-top: 12px; width: 100%; transition: 0.2s; display: none; }
-    .btn-secondary:hover { background: #f7931a; color: #1a1a1d; }
-    input[type="text"] { width: 100%; padding: 14px; border-radius: 8px; border: 1px solid #555; background: #111; color: white; font-size: 15px; margin-bottom: 12px; }
-    input[type="text"]:focus { outline: none; border-color: #f7931a; }
-    .score-display { font-size: 48px; font-weight: bold; color: #f7931a; margin: 20px 0 8px; }
-    .score-label { color: #aaa; margin-bottom: 20px; }
-    .sats-display { background: #222; border: 2px solid #f7931a; border-radius: 8px; padding: 16px; margin: 16px 0; }
-    .sats-display .amount { font-size: 32px; font-weight: bold; color: #f7931a; }
-    #error-msg { color: #dc3545; font-size: 14px; margin-top: 8px; min-height: 20px; }
-    #payment-status { margin-top: 14px; font-weight: bold; min-height: 20px; }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plan B Campus Cash ⚡</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #1a1a1d;
+        color: #ffffff;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        padding: 20px;
+      }
+      .container {
+        background: #2d2d30;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+        max-width: 520px;
+        width: 100%;
+        text-align: center;
+      }
+      h1 {
+        color: #f7931a;
+        margin-bottom: 20px;
+      }
+      h3 {
+        margin-bottom: 16px;
+        line-height: 1.5;
+      }
+      .screen {
+        display: none;
+      }
+      .screen.active {
+        display: block;
+      }
+      .score-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #222;
+        padding: 10px 16px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 14px;
+        color: #aaa;
+      }
+      .score-bar span {
+        color: #f7931a;
+        font-weight: bold;
+        font-size: 16px;
+      }
+      .btn-option {
+        display: block;
+        width: 100%;
+        padding: 14px;
+        margin: 8px 0;
+        background: #444;
+        border: none;
+        color: white;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 15px;
+        transition: 0.2s;
+        text-align: left;
+      }
+      .btn-option:hover:not(:disabled) {
+        background: #f7931a;
+        color: #1a1a1d;
+        font-weight: bold;
+      }
+      .btn-option.correct {
+        background: #28a745 !important;
+        color: white;
+        font-weight: bold;
+      }
+      .btn-option.wrong {
+        background: #dc3545 !important;
+        color: white;
+      }
+      .btn-option:disabled {
+        cursor: not-allowed;
+        opacity: 0.8;
+      }
+      #feedback {
+        margin-top: 14px;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: bold;
+        display: none;
+      }
+      #feedback.correct {
+        background: rgba(40, 167, 69, 0.2);
+        color: #28a745;
+        border: 1px solid #28a745;
+      }
+      #feedback.wrong {
+        background: rgba(220, 53, 69, 0.2);
+        color: #dc3545;
+        border: 1px solid #dc3545;
+      }
+      .btn-primary {
+        background: #f7931a;
+        color: #1a1a1d;
+        font-weight: bold;
+        padding: 14px 28px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        margin-top: 16px;
+        width: 100%;
+        transition: 0.2s;
+      }
+      .btn-primary:hover:not(:disabled) {
+        background: #e6820f;
+      }
+      .btn-primary:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        background: #f7931a;
+      }
+      .btn-secondary {
+        background: #555;
+        color: white;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 15px;
+        margin-top: 12px;
+        width: 100%;
+        transition: 0.2s;
+        display: none;
+      }
+      .btn-secondary:hover {
+        background: #f7931a;
+        color: #1a1a1d;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 14px;
+        border-radius: 8px;
+        border: 1px solid #555;
+        background: #111;
+        color: white;
+        font-size: 15px;
+        margin-bottom: 12px;
+      }
+      input[type="text"]:focus {
+        outline: none;
+        border-color: #f7931a;
+      }
+      .score-display {
+        font-size: 48px;
+        font-weight: bold;
+        color: #f7931a;
+        margin: 20px 0 8px;
+      }
+      .score-label {
+        color: #aaa;
+        margin-bottom: 20px;
+      }
+      .sats-display {
+        background: #222;
+        border: 2px solid #f7931a;
+        border-radius: 8px;
+        padding: 16px;
+        margin: 16px 0;
+      }
+      .sats-display .amount {
+        font-size: 32px;
+        font-weight: bold;
+        color: #f7931a;
+      }
+      #error-msg {
+        color: #dc3545;
+        font-size: 14px;
+        margin-top: 8px;
+        min-height: 20px;
+      }
+      #payment-status {
+        margin-top: 14px;
+        font-weight: bold;
+        min-height: 20px;
+      }
 
-    /* Step badge wallet */
-    .step-badge {
-      display: inline-block;
-      background: #f7931a;
-      color: #1a1a1d;
-      font-size: 11px;
-      font-weight: bold;
-      padding: 2px 8px;
-      border-radius: 99px;
-      margin-bottom: 8px;
-      letter-spacing: 0.5px;
-    }
-    .step-badge.done { background: #28a745; color: white; }
-    .step-badge.locked { background: #444; color: #aaa; }
+      /* Step badge wallet */
+      .step-badge {
+        display: inline-block;
+        background: #f7931a;
+        color: #1a1a1d;
+        font-size: 11px;
+        font-weight: bold;
+        padding: 2px 8px;
+        border-radius: 99px;
+        margin-bottom: 8px;
+        letter-spacing: 0.5px;
+      }
+      .step-badge.done {
+        background: #28a745;
+        color: white;
+      }
+      .step-badge.locked {
+        background: #444;
+        color: #aaa;
+      }
 
-    /* Wallet badge — appare dopo registrazione */
-    .wallet-badge {
-      display: none;
-      background: rgba(40,167,69,0.12);
-      border: 1px solid #28a745;
-      border-radius: 8px;
-      padding: 10px 14px;
-      margin-bottom: 16px;
-      font-size: 13px;
-      color: #28a745;
-      text-align: left;
-    }
-    .wallet-badge span { color: #aaa; font-size: 12px; display: block; margin-top: 2px; }
+      /* Wallet badge — appare dopo registrazione */
+      .wallet-badge {
+        display: none;
+        background: rgba(40, 167, 69, 0.12);
+        border: 1px solid #28a745;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 16px;
+        font-size: 13px;
+        color: #28a745;
+        text-align: left;
+      }
+      .wallet-badge span {
+        color: #aaa;
+        font-size: 12px;
+        display: block;
+        margin-top: 2px;
+      }
 
-    /* Sezione wallet custodiale — ora obbligatoria */
-    .wallet-section {
-      border: 1px solid #444;
-      border-radius: 10px;
-      padding: 18px;
-      margin-top: 20px;
-      text-align: left;
-    }
-    .wallet-section p { color: #aaa; font-size: 13px; margin-bottom: 12px; line-height: 1.6; }
-    .wallet-section .btn-wallet {
-      background: #333;
-      color: #f7931a;
-      border: 1px solid #f7931a;
-      padding: 12px 20px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: bold;
-      width: 100%;
-      transition: 0.2s;
-    }
-    .wallet-section .btn-wallet:hover:not(:disabled) { background: #f7931a; color: #1a1a1d; }
-    .wallet-section .btn-wallet:disabled { opacity: 0.5; cursor: not-allowed; }
-    #wallet-status { font-size: 13px; margin-top: 10px; min-height: 18px; text-align: center; }
+      /* Sezione wallet custodiale — ora obbligatoria */
+      .wallet-section {
+        border: 1px solid #444;
+        border-radius: 10px;
+        padding: 18px;
+        margin-top: 20px;
+        text-align: left;
+      }
+      .wallet-section p {
+        color: #aaa;
+        font-size: 13px;
+        margin-bottom: 12px;
+        line-height: 1.6;
+      }
+      .wallet-section .btn-wallet {
+        background: #333;
+        color: #f7931a;
+        border: 1px solid #f7931a;
+        padding: 12px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        width: 100%;
+        transition: 0.2s;
+      }
+      .wallet-section .btn-wallet:hover:not(:disabled) {
+        background: #f7931a;
+        color: #1a1a1d;
+      }
+      .wallet-section .btn-wallet:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #wallet-status {
+        font-size: 13px;
+        margin-top: 10px;
+        min-height: 18px;
+        text-align: center;
+      }
 
-    /* Prize banner */
-    .prize-banner {
-      background: linear-gradient(135deg, rgba(247,147,26,0.15), rgba(247,147,26,0.05));
-      border: 1px solid rgba(247,147,26,0.4);
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 20px;
-      font-size: 14px;
-      color: #f7931a;
-    }
-    .prize-banner strong { font-size: 20px; }
+      /* Prize banner */
+      .prize-banner {
+        background: linear-gradient(
+          135deg,
+          rgba(247, 147, 26, 0.15),
+          rgba(247, 147, 26, 0.05)
+        );
+        border: 1px solid rgba(247, 147, 26, 0.4);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 20px;
+        font-size: 14px;
+        color: #f7931a;
+      }
+      .prize-banner strong {
+        font-size: 20px;
+      }
 
-    /* Wallet info risultati */
-    .wallet-result-box {
-      display: none;
-      background: #1a1a1d;
-      border: 1px solid #28a745;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-top: 12px;
-      font-size: 13px;
-      color: #aaa;
-      text-align: left;
-    }
-    .wallet-result-box .balance { color: #28a745; font-size: 22px; font-weight: bold; }
-    .wallet-result-box .label { font-size: 11px; color: #666; margin-bottom: 2px; }
-  </style>
-</head>
-<body>
-<div class="container">
-  <h1>⚡ Campus Cash Quiz</h1>
+      /* Wallet info risultati */
+      .wallet-result-box {
+        display: none;
+        background: #1a1a1d;
+        border: 1px solid #28a745;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-top: 12px;
+        font-size: 13px;
+        color: #aaa;
+        text-align: left;
+      }
+      .wallet-result-box .balance {
+        color: #28a745;
+        font-size: 22px;
+        font-weight: bold;
+      }
+      .wallet-result-box .label {
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>⚡ Campus Cash Quiz</h1>
 
-  <!-- ══════════════════════════════
+      <!-- ══════════════════════════════
        SCREEN 1 — START
   ══════════════════════════════ -->
-  <div id="screen-start" class="screen active">
+      <div id="screen-start" class="screen active">
+        <!-- Prize banner -->
+        <div class="prize-banner">
+          🏆 Score <strong>5/5</strong> and win
+          <strong>1500 sats</strong>!<br />
+          <span style="font-size: 12px; color: #aaa"
+            >One attempt per day · Custodial wallet required</span
+          >
+        </div>
 
-    <!-- Prize banner -->
-    <div class="prize-banner">
-      🏆 Score <strong>5/5</strong> and win <strong>1500 sats</strong>!<br>
-      <span style="font-size:12px; color:#aaa;">One attempt per day · Custodial wallet required</span>
-    </div>
+        <!-- Green badge: shown after wallet creation -->
+        <div class="wallet-badge" id="wallet-badge">
+          ✅ Wallet active — you're ready to play!
+          <span id="wallet-badge-address"></span>
+        </div>
 
-    <!-- Badge verde: appare dopo wallet creato -->
-    <div class="wallet-badge" id="wallet-badge">
-      ✅ Wallet active — you're ready to play!
-      <span id="wallet-badge-address"></span>
-    </div>
+        <!-- STEP 1 — Create wallet (required) -->
+        <div class="wallet-section" id="wallet-section">
+          <div class="step-badge" id="step1-badge">STEP 1 — REQUIRED</div>
+          <p>
+            🏦 <strong style="color: #fff">Create your custodial wallet</strong
+            ><br />
+            Enter your Lightning Address and an optional name, then create your
+            wallet. You
+            <strong style="color: #f7931a">cannot play</strong> without
+            completing this step.
+          </p>
+          <input
+            type="text"
+            id="input-address"
+            placeholder="your@lightningaddress.com"
+          />
+          <input
+            type="text"
+            id="input-username"
+            placeholder="Your name (optional, e.g. Mario)"
+            style="margin-bottom: 12px"
+          />
+          <button
+            class="btn-wallet"
+            id="btn-create-wallet"
+            onclick="createWallet()"
+          >
+            Create Custodial Wallet 🏦
+          </button>
+          <p id="wallet-status"></p>
+        </div>
 
-    <!-- STEP 1 — Crea wallet (obbligatorio) -->
-    <div class="wallet-section" id="wallet-section">
-      <div class="step-badge" id="step1-badge">STEP 1 — REQUIRED</div>
-      <p>
-        🏦 <strong style="color:#fff;">Create your custodial wallet</strong><br>
-        Enter your Lightning Address and an optional name, then create your wallet.
-        You <strong style="color:#f7931a;">cannot play</strong> without completing this step.
-      </p>
-      <input type="text" id="input-address" placeholder="your@lightningaddress.com" />
-      <input type="text" id="input-username" placeholder="Your name (optional, e.g. Mario)" style="margin-bottom:12px;" />
-      <button class="btn-wallet" id="btn-create-wallet" onclick="createWallet()">
-        Create Custodial Wallet 🏦
-      </button>
-      <p id="wallet-status"></p>
-    </div>
+        <!-- STEP 2 — Start quiz (locked until step 1 is complete) -->
+        <div style="margin-top: 20px">
+          <div class="step-badge locked" id="step2-badge">
+            STEP 2 — START QUIZ
+          </div>
+          <p
+            id="error-msg"
+            style="
+              color: #dc3545;
+              font-size: 14px;
+              margin: 8px 0;
+              min-height: 20px;
+            "
+          ></p>
+          <button
+            class="btn-primary"
+            id="btn-start"
+            onclick="startQuiz()"
+            disabled
+          >
+            🔒 Create wallet first
+          </button>
+        </div>
+      </div>
 
-    <!-- STEP 2 — Start quiz (bloccato finché step 1 non è completato) -->
-    <div style="margin-top: 20px;">
-      <div class="step-badge locked" id="step2-badge">STEP 2 — START QUIZ</div>
-      <p id="error-msg" style="color:#dc3545; font-size:14px; margin: 8px 0; min-height:20px;"></p>
-      <button class="btn-primary" id="btn-start" onclick="startQuiz()" disabled>
-        🔒 Create wallet first
-      </button>
-    </div>
-
-  </div>
-
-  <!-- ══════════════════════════════
+      <!-- ══════════════════════════════
        SCREEN 2 — QUIZ
   ══════════════════════════════ -->
-  <div id="screen-quiz" class="screen">
-    <div class="score-bar">
-      <span id="question-counter">Question 1 / 5</span>
-      <span>Score: <span id="score-live">0</span></span>
-    </div>
-    <h3 id="question-text"></h3>
-    <div id="options-container"></div>
-    <div id="feedback"></div>
-    <button class="btn-secondary" id="btn-next" onclick="nextQuestion()">Next question ➡️</button>
-  </div>
+      <div id="screen-quiz" class="screen">
+        <div class="score-bar">
+          <span id="question-counter">Question 1 / 5</span>
+          <span>Score: <span id="score-live">0</span></span>
+        </div>
+        <h3 id="question-text"></h3>
+        <div id="options-container"></div>
+        <div id="feedback"></div>
+        <button class="btn-secondary" id="btn-next" onclick="nextQuestion()">
+          Next question ➡️
+        </button>
+      </div>
 
-  <!-- ══════════════════════════════
+      <!-- ══════════════════════════════
        SCREEN 3 — RESULT
   ══════════════════════════════ -->
-  <div id="screen-result" class="screen">
-    <h3 id="result-title" style="color:#f7931a;">Quiz Complete! 🎉</h3>
-    <div class="score-display" id="final-score-display">0/5</div>
-    <p class="score-label">correct answers</p>
-    <div class="sats-display">
-      <p style="color:#aaa; margin-bottom:4px;">Sats earned</p>
-      <div class="amount" id="sats-earned-display">0 sats</div>
+      <div id="screen-result" class="screen">
+        <h3 id="result-title" style="color: #f7931a">Quiz Complete! 🎉</h3>
+        <div class="score-display" id="final-score-display">0/5</div>
+        <p class="score-label">correct answers</p>
+        <div class="sats-display">
+          <p style="color: #aaa; margin-bottom: 4px">Sats earned</p>
+          <div class="amount" id="sats-earned-display">0 sats</div>
+        </div>
+        <p id="payment-status">⏳ Processing...</p>
+
+        <!-- Custodial wallet balance (only shown after a 5/5 payout) -->
+        <div class="wallet-result-box" id="wallet-result-box">
+          <div class="label">Your custodial wallet balance</div>
+          <div class="balance" id="wallet-balance-display">— sats</div>
+          <div
+            style="margin-top: 6px; font-size: 11px; color: #555"
+            id="wallet-id-display"
+          ></div>
+        </div>
+      </div>
     </div>
-    <p id="payment-status">⏳ Processing...</p>
 
-    <!-- Saldo wallet custodiale (visibile solo dopo pagamento 5/5) -->
-    <div class="wallet-result-box" id="wallet-result-box">
-      <div class="label">Your custodial wallet balance</div>
-      <div class="balance" id="wallet-balance-display">— sats</div>
-      <div style="margin-top:6px; font-size:11px; color:#555;" id="wallet-id-display"></div>
-    </div>
-  </div>
+    <script>
+      let questions = [];
+      let currentIndex = 0;
+      let score = 0;
+      let lightningAddress = "";
+      let hasCustodialWallet = false;
 
-</div>
+      // Empty base = same-origin: Express serves these static files itself, so
+      // /api/* lands on whichever host the browser loaded the page from.
+      const API = "";
 
-<script>
-  let questions = [];
-  let currentIndex = 0;
-  let score = 0;
-  let lightningAddress = '';
-  let hasCustodialWallet = false;
+      // ────────────────────────────────────
+      // STEP 1 — CREATE CUSTODIAL WALLET (required)
+      // POST /api/create-user
+      // ────────────────────────────────────
+      async function createWallet() {
+        const addressInput = document.getElementById("input-address");
+        const usernameInput = document.getElementById("input-username");
+        const statusEl = document.getElementById("wallet-status");
+        const btn = document.getElementById("btn-create-wallet");
 
-  const API = 'http://localhost:3000';
+        const address = addressInput.value.trim();
+        const username = usernameInput.value.trim();
 
-  // ────────────────────────────────────
-  // STEP 1 — CREA WALLET CUSTODIALE (obbligatorio)
-  // POST /api/create-user
-  // ────────────────────────────────────
-  async function createWallet() {
-    const addressInput = document.getElementById('input-address');
-    const usernameInput = document.getElementById('input-username');
-    const statusEl = document.getElementById('wallet-status');
-    const btn = document.getElementById('btn-create-wallet');
-
-    const address = addressInput.value.trim();
-    const username = usernameInput.value.trim();
-
-    if (!address || !address.includes('@') || !address.includes('.')) {
-      statusEl.style.color = '#dc3545';
-      statusEl.innerText = '⚠️ Enter a valid Lightning Address (e.g. name@domain.com)';
-      return;
-    }
-
-    btn.disabled = true;
-    btn.innerText = 'Creating wallet...';
-    statusEl.style.color = '#aaa';
-    statusEl.innerText = '⏳ Contacting LNbits...';
-
-    try {
-      const response = await fetch(`${API}/api/create-user`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lightningAddress: address,
-          username: username || '',
-          email: ''
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        statusEl.style.color = '#dc3545';
-        statusEl.innerText = '❌ ' + (data.error || 'Error creating wallet');
-        btn.disabled = false;
-        btn.innerText = 'Create Custodial Wallet 🏦';
-        return;
-      }
-
-      // ✅ Wallet creato o già esistente
-      hasCustodialWallet = true;
-      lightningAddress = address;
-
-      statusEl.style.color = '#28a745';
-      statusEl.innerText = data.already_existed
-        ? '✅ Wallet already active!'
-        : '✅ Wallet created successfully!';
-
-      btn.innerText = '✅ Wallet Active';
-
-      // Mostra badge verde
-      const badge = document.getElementById('wallet-badge');
-      const badgeAddr = document.getElementById('wallet-badge-address');
-      badge.style.display = 'block';
-      badgeAddr.innerText = data.username ? `${data.username} — ${address}` : address;
-
-      // Aggiorna Step 1 → done, Step 2 → sbloccato
-      document.getElementById('step1-badge').className = 'step-badge done';
-      document.getElementById('step1-badge').innerText = 'STEP 1 — ✅ DONE';
-      document.getElementById('step2-badge').className = 'step-badge';
-      document.getElementById('step2-badge').innerText = 'STEP 2 — START QUIZ';
-
-      // Sblocca pulsante Start Quiz
-      const startBtn = document.getElementById('btn-start');
-      startBtn.disabled = false;
-      startBtn.innerText = 'Start Quiz ⚡';
-
-    } catch (err) {
-      statusEl.style.color = '#dc3545';
-      statusEl.innerText = '❌ Connection error. Is the server running?';
-      btn.disabled = false;
-      btn.innerText = 'Create Custodial Wallet 🏦';
-    }
-  }
-
-  // ────────────────────────────────────
-  // STEP 2 — START QUIZ
-  // POST /api/start
-  // ────────────────────────────────────
-  async function startQuiz() {
-    const errorMsg = document.getElementById('error-msg');
-    errorMsg.innerText = '';
-
-    // Doppio check: wallet obbligatorio
-    if (!hasCustodialWallet) {
-      errorMsg.innerText = '⚠️ You must create a custodial wallet first!';
-      return;
-    }
-
-    const btn = document.getElementById('btn-start');
-    btn.innerText = 'Loading...';
-    btn.disabled = true;
-
-    try {
-      const response = await fetch(`${API}/api/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lightningAddress })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        errorMsg.innerText = '❌ ' + data.errore;
-        btn.innerText = 'Start Quiz ⚡';
-        btn.disabled = false;
-        return;
-      }
-
-      questions = data.questions;
-      currentIndex = 0;
-      score = 0;
-      showScreen('screen-quiz');
-      loadQuestion();
-
-    } catch (err) {
-      errorMsg.innerText = '❌ Connection error. Is the server running?';
-      btn.innerText = 'Start Quiz ⚡';
-      btn.disabled = false;
-    }
-  }
-
-  // ────────────────────────────────────
-  // CARICA DOMANDA
-  // ────────────────────────────────────
-  function loadQuestion() {
-    const q = questions[currentIndex];
-    document.getElementById('question-counter').innerText = `Question ${currentIndex + 1} / ${questions.length}`;
-    document.getElementById('score-live').innerText = score;
-    document.getElementById('question-text').innerText = q.testoDomanda;
-    document.getElementById('feedback').style.display = 'none';
-    document.getElementById('btn-next').style.display = 'none';
-
-    const container = document.getElementById('options-container');
-    container.innerHTML = '';
-
-    q.opzioni.forEach(option => {
-      const btn = document.createElement('button');
-      btn.className = 'btn-option';
-      btn.innerText = option;
-      btn.onclick = () => answerQuestion(btn, option, q.rispostaEsatta, q.spiegazione);
-      container.appendChild(btn);
-    });
-  }
-
-  // ────────────────────────────────────
-  // RISPOSTA UTENTE
-  // ────────────────────────────────────
-  function answerQuestion(clickedBtn, chosen, correct, explanation) {
-    document.querySelectorAll('.btn-option').forEach(b => b.disabled = true);
-
-    const feedback = document.getElementById('feedback');
-    feedback.style.display = 'block';
-
-    if (chosen === correct) {
-      score++;
-      clickedBtn.classList.add('correct');
-      feedback.className = 'correct';
-      feedback.innerText = '✅ Correct! ' + (explanation || '');
-    } else {
-      clickedBtn.classList.add('wrong');
-      document.querySelectorAll('.btn-option').forEach(b => {
-        if (b.innerText === correct) b.classList.add('correct');
-      });
-      feedback.className = 'wrong';
-      feedback.innerText = '❌ Wrong! Correct answer: ' + correct + (explanation ? ' — ' + explanation : '');
-    }
-
-    document.getElementById('score-live').innerText = score;
-
-    const btnNext = document.getElementById('btn-next');
-    if (currentIndex >= questions.length - 1) {
-      btnNext.innerText = 'See Results 🏆';
-      btnNext.onclick = showResults;
-    } else {
-      btnNext.innerText = 'Next question ➡️';
-      btnNext.onclick = nextQuestion;
-    }
-    btnNext.style.display = 'block';
-  }
-
-  function nextQuestion() {
-    currentIndex++;
-    loadQuestion();
-  }
-
-  // ────────────────────────────────────
-  // SCHERMATA RISULTATI + SUBMIT
-  // POST /api/submit
-  // ────────────────────────────────────
-  async function showResults() {
-    showScreen('screen-result');
-    const total = questions.length;
-    const satsEarned = (score === total) ? 1500 : 0;
-
-    document.getElementById('final-score-display').innerText = score + '/' + total;
-    document.getElementById('sats-earned-display').innerText = satsEarned > 0
-      ? satsEarned + ' sats 🎉'
-      : '0 sats';
-
-    // Titolo diverso a seconda del risultato
-    document.getElementById('result-title').innerText = score === total
-      ? '🏆 Perfect Score! You won!'
-      : score >= 3
-        ? '📚 Good try! Almost there...'
-        : '😅 Keep studying Bitcoin!';
-
-    const statusEl = document.getElementById('payment-status');
-    statusEl.style.color = '#aaa';
-    statusEl.innerText = satsEarned > 0 ? '⏳ Sending 1500 sats...' : '';
-
-    try {
-      const response = await fetch(`${API}/api/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lightningAddress, score, total })
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.successo) {
-        if (satsEarned > 0) {
-          statusEl.style.color = '#28a745';
-          statusEl.innerText = '✅ ' + data.messaggio;
-          fetchAndShowBalance();
-        } else {
-          statusEl.style.color = '#aaa';
-          statusEl.innerText = '💡 Score 5/5 tomorrow to win 1500 sats!';
+        if (!address || !address.includes("@") || !address.includes(".")) {
+          statusEl.style.color = "#dc3545";
+          statusEl.innerText =
+            "⚠️ Enter a valid Lightning Address (e.g. name@domain.com)";
+          return;
         }
-      } else {
-        statusEl.style.color = '#dc3545';
-        statusEl.innerText = '❌ ' + (data.errore || 'Payment error');
+
+        btn.disabled = true;
+        btn.innerText = "Creating wallet...";
+        statusEl.style.color = "#aaa";
+        statusEl.innerText = "⏳ Contacting LNbits...";
+
+        try {
+          const response = await fetch(`${API}/api/create-user`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lightningAddress: address,
+              username: username || "",
+              email: "",
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            statusEl.style.color = "#dc3545";
+            statusEl.innerText =
+              "❌ " + (data.error || "Error creating wallet");
+            btn.disabled = false;
+            btn.innerText = "Create Custodial Wallet 🏦";
+            return;
+          }
+
+          // ✅ Wallet created or already exists
+          hasCustodialWallet = true;
+          lightningAddress = address;
+
+          statusEl.style.color = "#28a745";
+          statusEl.innerText = data.already_existed
+            ? "✅ Wallet already active!"
+            : "✅ Wallet created successfully!";
+
+          btn.innerText = "✅ Wallet Active";
+
+          // Show green badge
+          const badge = document.getElementById("wallet-badge");
+          const badgeAddr = document.getElementById("wallet-badge-address");
+          badge.style.display = "block";
+          badgeAddr.innerText = data.username
+            ? `${data.username} — ${address}`
+            : address;
+
+          // Update Step 1 → done, Step 2 → unlocked
+          document.getElementById("step1-badge").className = "step-badge done";
+          document.getElementById("step1-badge").innerText = "STEP 1 — ✅ DONE";
+          document.getElementById("step2-badge").className = "step-badge";
+          document.getElementById("step2-badge").innerText =
+            "STEP 2 — START QUIZ";
+
+          // Unlock Start Quiz button
+          const startBtn = document.getElementById("btn-start");
+          startBtn.disabled = false;
+          startBtn.innerText = "Start Quiz ⚡";
+        } catch (err) {
+          statusEl.style.color = "#dc3545";
+          statusEl.innerText = "❌ Connection error. Is the server running?";
+          btn.disabled = false;
+          btn.innerText = "Create Custodial Wallet 🏦";
+        }
       }
 
-    } catch (err) {
-      statusEl.style.color = '#dc3545';
-      statusEl.innerText = '❌ Connection error during payment.';
-    }
-  }
+      // ────────────────────────────────────
+      // STEP 2 — START QUIZ
+      // POST /api/start
+      // ────────────────────────────────────
+      async function startQuiz() {
+        const errorMsg = document.getElementById("error-msg");
+        errorMsg.innerText = "";
 
-  // ────────────────────────────────────
-  // LEGGI SALDO WALLET CUSTODIALE
-  // GET /api/wallet-balance/:lightningAddress
-  // ────────────────────────────────────
-  async function fetchAndShowBalance() {
-    try {
-      const response = await fetch(`${API}/api/wallet-balance/${encodeURIComponent(lightningAddress)}`);
-      if (!response.ok) return;
-      const data = await response.json();
+        // Double-check: wallet is required
+        if (!hasCustodialWallet) {
+          errorMsg.innerText = "⚠️ You must create a custodial wallet first!";
+          return;
+        }
 
-      const box = document.getElementById('wallet-result-box');
-      const balanceEl = document.getElementById('wallet-balance-display');
-      const idEl = document.getElementById('wallet-id-display');
+        const btn = document.getElementById("btn-start");
+        btn.innerText = "Loading...";
+        btn.disabled = true;
 
-      box.style.display = 'block';
-      balanceEl.innerText = data.balance_sats + ' sats';
-      idEl.innerText = 'Wallet ID: ' + data.wallet_id;
+        try {
+          const response = await fetch(`${API}/api/start`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lightningAddress }),
+          });
 
-    } catch (err) {
-      // Silenzioso
-    }
-  }
+          const data = await response.json();
 
-  // ────────────────────────────────────
-  // UTILITY
-  // ────────────────────────────────────
-  function showScreen(id) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-  }
-</script>
-</body>
+          if (!response.ok) {
+            errorMsg.innerText = "❌ " + data.errore;
+            btn.innerText = "Start Quiz ⚡";
+            btn.disabled = false;
+            return;
+          }
+
+          questions = data.questions;
+          currentIndex = 0;
+          score = 0;
+          showScreen("screen-quiz");
+          loadQuestion();
+        } catch (err) {
+          errorMsg.innerText = "❌ Connection error. Is the server running?";
+          btn.innerText = "Start Quiz ⚡";
+          btn.disabled = false;
+        }
+      }
+
+      // ────────────────────────────────────
+      // LOAD QUESTION
+      // ────────────────────────────────────
+      function loadQuestion() {
+        const q = questions[currentIndex];
+        document.getElementById("question-counter").innerText =
+          `Question ${currentIndex + 1} / ${questions.length}`;
+        document.getElementById("score-live").innerText = score;
+        document.getElementById("question-text").innerText = q.testoDomanda;
+        document.getElementById("feedback").style.display = "none";
+        document.getElementById("btn-next").style.display = "none";
+
+        const container = document.getElementById("options-container");
+        container.innerHTML = "";
+
+        q.opzioni.forEach((option) => {
+          const btn = document.createElement("button");
+          btn.className = "btn-option";
+          btn.innerText = option;
+          btn.onclick = () =>
+            answerQuestion(btn, option, q.rispostaEsatta, q.spiegazione);
+          container.appendChild(btn);
+        });
+      }
+
+      // ────────────────────────────────────
+      // USER ANSWER
+      // ────────────────────────────────────
+      function answerQuestion(clickedBtn, chosen, correct, explanation) {
+        document
+          .querySelectorAll(".btn-option")
+          .forEach((b) => (b.disabled = true));
+
+        const feedback = document.getElementById("feedback");
+        feedback.style.display = "block";
+
+        if (chosen === correct) {
+          score++;
+          clickedBtn.classList.add("correct");
+          feedback.className = "correct";
+          feedback.innerText = "✅ Correct! " + (explanation || "");
+        } else {
+          clickedBtn.classList.add("wrong");
+          document.querySelectorAll(".btn-option").forEach((b) => {
+            if (b.innerText === correct) b.classList.add("correct");
+          });
+          feedback.className = "wrong";
+          feedback.innerText =
+            "❌ Wrong! Correct answer: " +
+            correct +
+            (explanation ? " — " + explanation : "");
+        }
+
+        document.getElementById("score-live").innerText = score;
+
+        const btnNext = document.getElementById("btn-next");
+        if (currentIndex >= questions.length - 1) {
+          btnNext.innerText = "See Results 🏆";
+          btnNext.onclick = showResults;
+        } else {
+          btnNext.innerText = "Next question ➡️";
+          btnNext.onclick = nextQuestion;
+        }
+        btnNext.style.display = "block";
+      }
+
+      function nextQuestion() {
+        currentIndex++;
+        loadQuestion();
+      }
+
+      // ────────────────────────────────────
+      // RESULTS SCREEN + SUBMIT
+      // POST /api/submit
+      // ────────────────────────────────────
+      async function showResults() {
+        showScreen("screen-result");
+        const total = questions.length;
+        const satsEarned = score === total ? 1500 : 0;
+
+        document.getElementById("final-score-display").innerText =
+          score + "/" + total;
+        document.getElementById("sats-earned-display").innerText =
+          satsEarned > 0 ? satsEarned + " sats 🎉" : "0 sats";
+
+        // Different title depending on the result
+        document.getElementById("result-title").innerText =
+          score === total
+            ? "🏆 Perfect Score! You won!"
+            : score >= 3
+              ? "📚 Good try! Almost there..."
+              : "😅 Keep studying Bitcoin!";
+
+        const statusEl = document.getElementById("payment-status");
+        statusEl.style.color = "#aaa";
+        statusEl.innerText = satsEarned > 0 ? "⏳ Sending 1500 sats..." : "";
+
+        try {
+          const response = await fetch(`${API}/api/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lightningAddress, score, total }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.successo) {
+            if (satsEarned > 0) {
+              statusEl.style.color = "#28a745";
+              statusEl.innerText = "✅ " + data.messaggio;
+              fetchAndShowBalance();
+            } else {
+              statusEl.style.color = "#aaa";
+              statusEl.innerText = "💡 Score 5/5 tomorrow to win 1500 sats!";
+            }
+          } else {
+            statusEl.style.color = "#dc3545";
+            statusEl.innerText = "❌ " + (data.errore || "Payment error");
+          }
+        } catch (err) {
+          statusEl.style.color = "#dc3545";
+          statusEl.innerText = "❌ Connection error during payment.";
+        }
+      }
+
+      // ────────────────────────────────────
+      // READ CUSTODIAL WALLET BALANCE
+      // GET /api/wallet-balance/:lightningAddress
+      // ────────────────────────────────────
+      async function fetchAndShowBalance() {
+        try {
+          const response = await fetch(
+            `${API}/api/wallet-balance/${encodeURIComponent(lightningAddress)}`,
+          );
+          if (!response.ok) return;
+          const data = await response.json();
+
+          const box = document.getElementById("wallet-result-box");
+          const balanceEl = document.getElementById("wallet-balance-display");
+          const idEl = document.getElementById("wallet-id-display");
+
+          box.style.display = "block";
+          balanceEl.innerText = data.balance_sats + " sats";
+          idEl.innerText = "Wallet ID: " + data.wallet_id;
+        } catch (err) {
+          // Silent
+        }
+      }
+
+      // ────────────────────────────────────
+      // UTILITY
+      // ────────────────────────────────────
+      function showScreen(id) {
+        document
+          .querySelectorAll(".screen")
+          .forEach((s) => s.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+      }
+    </script>
+  </body>
 </html>
