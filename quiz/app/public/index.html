@@ -315,7 +315,106 @@
         color: #666;
         margin-bottom: 2px;
       }
+      /* LNURL-auth modal */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 100;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+      .modal-overlay.active {
+        display: flex;
+      }
+      .modal-card {
+        background: #2d2d30;
+        border-radius: 12px;
+        padding: 24px;
+        max-width: 380px;
+        width: 100%;
+        text-align: center;
+      }
+      .modal-card h3 {
+        color: #f7931a;
+        margin-bottom: 12px;
+      }
+      .modal-card .qr-box {
+        background: #fff;
+        padding: 16px;
+        border-radius: 8px;
+        display: inline-block;
+        margin: 12px 0;
+      }
+      .modal-card .qr-box canvas,
+      .modal-card .qr-box img {
+        display: block;
+      }
+      .modal-card .lnurl-text {
+        font-family: monospace;
+        font-size: 11px;
+        word-break: break-all;
+        color: #888;
+        margin: 8px 0;
+      }
+      .modal-card .copy-btn,
+      .modal-card .close-btn {
+        background: #444;
+        color: #fff;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        margin: 4px;
+      }
+      .modal-card .copy-btn:hover,
+      .modal-card .close-btn:hover {
+        background: #f7931a;
+        color: #1a1a1d;
+      }
+      .modal-card .status-line {
+        color: #aaa;
+        font-size: 14px;
+        margin-top: 12px;
+        min-height: 20px;
+      }
+      .or-divider {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 20px 0;
+        color: #666;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .or-divider::before,
+      .or-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: #444;
+      }
+      .btn-lightning-login {
+        background: transparent;
+        color: #f7931a;
+        border: 1px dashed #f7931a;
+        padding: 12px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        width: 100%;
+        transition: 0.2s;
+      }
+      .btn-lightning-login:hover {
+        background: rgba(247, 147, 26, 0.1);
+      }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   </head>
   <body>
     <div class="container">
@@ -371,6 +470,12 @@
           </button>
           <p id="wallet-status"></p>
         </div>
+
+        <!-- OR — log in with an existing Lightning wallet (LNURL-auth) -->
+        <div class="or-divider">or</div>
+        <button class="btn-lightning-login" onclick="openLnurlAuthModal()">
+          ⚡ Login with your Lightning wallet
+        </button>
 
         <!-- STEP 2 — Start quiz (locked until step 1 is complete) -->
         <div style="margin-top: 20px">
@@ -438,12 +543,51 @@
       </div>
     </div>
 
+    <!-- LNURL-auth modal (hidden by default) -->
+    <div class="modal-overlay" id="lnurl-modal">
+      <div class="modal-card">
+        <h3 id="lnurl-modal-title">⚡ Scan with your Lightning wallet</h3>
+        <p id="lnurl-modal-subtitle" style="color: #aaa; font-size: 14px">
+          Scan to log in. Works with Wallet of Satoshi, Phoenix, Alby, Mutiny,
+          and any LNURL-auth wallet.
+        </p>
+
+        <div id="lnurl-qr-step">
+          <div class="qr-box" id="lnurl-qr"></div>
+          <div class="lnurl-text" id="lnurl-text"></div>
+          <button class="copy-btn" onclick="copyLnurlText()">Copy LNURL</button>
+        </div>
+
+        <div id="lnurl-payout-step" style="display: none">
+          <p style="margin-top: 8px">
+            One last thing — where should we send your sats?
+          </p>
+          <input
+            type="text"
+            id="payout-address-input"
+            placeholder="your@lightningaddress.com"
+            style="margin-top: 12px"
+          />
+          <button class="btn-primary" onclick="savePayoutAddress()">
+            Save & continue
+          </button>
+        </div>
+
+        <p class="status-line" id="lnurl-status-line">Waiting for scan…</p>
+        <button class="close-btn" onclick="closeLnurlAuthModal()">
+          Cancel
+        </button>
+      </div>
+    </div>
+
     <script>
       let questions = [];
       let currentIndex = 0;
       let score = 0;
       let lightningAddress = "";
       let hasCustodialWallet = false;
+      let isLnurlAuthed = false;
+      let authPollTimer = null;
 
       // Empty base = same-origin: Express serves these static files itself, so
       // /api/* lands on whichever host the browser loaded the page from.
@@ -738,6 +882,161 @@
           .forEach((s) => s.classList.remove("active"));
         document.getElementById(id).classList.add("active");
       }
+
+      // ────────────────────────────────────
+      // LNURL-AUTH (LUD-04) login flow
+      // ────────────────────────────────────
+      let currentK1 = null;
+      let currentLnurl = null;
+
+      async function openLnurlAuthModal() {
+        const modal = document.getElementById("lnurl-modal");
+        const statusLine = document.getElementById("lnurl-status-line");
+        document.getElementById("lnurl-qr-step").style.display = "block";
+        document.getElementById("lnurl-payout-step").style.display = "none";
+        statusLine.innerText = "Generating challenge…";
+        modal.classList.add("active");
+
+        try {
+          const res = await fetch(`${API}/api/auth/lnurl/init`);
+          if (!res.ok) throw new Error("init failed");
+          const data = await res.json();
+          currentK1 = data.k1;
+          currentLnurl = data.lnurl;
+
+          const qrBox = document.getElementById("lnurl-qr");
+          qrBox.innerHTML = "";
+          const canvas = document.createElement("canvas");
+          qrBox.appendChild(canvas);
+          await QRCode.toCanvas(canvas, "lightning:" + data.lnurl, {
+            width: 240,
+            margin: 1,
+          });
+          document.getElementById("lnurl-text").innerText = data.lnurl;
+          statusLine.innerText = "Waiting for scan…";
+
+          startAuthPolling(data.k1);
+        } catch (err) {
+          statusLine.innerText = "❌ " + err.message;
+        }
+      }
+
+      function startAuthPolling(k1) {
+        if (authPollTimer) clearInterval(authPollTimer);
+        authPollTimer = setInterval(async () => {
+          try {
+            const res = await fetch(
+              `${API}/api/auth/lnurl/status?k1=${encodeURIComponent(k1)}`,
+              { credentials: "include" },
+            );
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.expired) {
+              clearInterval(authPollTimer);
+              document.getElementById("lnurl-status-line").innerText =
+                "⚠️ Challenge expired — close and retry.";
+              return;
+            }
+            if (data.authenticated) {
+              clearInterval(authPollTimer);
+              onLnurlAuthSuccess(data.user);
+            }
+          } catch {
+            // network blip — keep polling
+          }
+        }, 2000);
+      }
+
+      function onLnurlAuthSuccess(user) {
+        isLnurlAuthed = true;
+        const statusLine = document.getElementById("lnurl-status-line");
+
+        if (!user.lightning_address) {
+          // First-time login — ask for payout address
+          statusLine.innerText = "✅ Authenticated.";
+          document.getElementById("lnurl-qr-step").style.display = "none";
+          document.getElementById("lnurl-payout-step").style.display = "block";
+          return;
+        }
+
+        finishLogin(user.lightning_address);
+      }
+
+      async function savePayoutAddress() {
+        const input = document.getElementById("payout-address-input");
+        const statusLine = document.getElementById("lnurl-status-line");
+        const addr = input.value.trim();
+        if (!addr || !addr.includes("@") || !addr.includes(".")) {
+          statusLine.innerText = "⚠️ Enter a valid Lightning Address.";
+          return;
+        }
+        statusLine.innerText = "Saving…";
+        try {
+          const res = await fetch(`${API}/api/auth/payout-address`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ lightning_address: addr }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "save failed");
+          finishLogin(addr);
+        } catch (err) {
+          statusLine.innerText = "❌ " + err.message;
+        }
+      }
+
+      function finishLogin(address) {
+        lightningAddress = address;
+        closeLnurlAuthModal();
+
+        // Mirror the createWallet() unlock flow — same UX outcome.
+        const badge = document.getElementById("wallet-badge");
+        const badgeAddr = document.getElementById("wallet-badge-address");
+        badge.style.display = "block";
+        badgeAddr.innerText = "⚡ " + address;
+
+        document.getElementById("step1-badge").className = "step-badge done";
+        document.getElementById("step1-badge").innerText =
+          "STEP 1 — ✅ LIGHTNING LOGIN";
+        document.getElementById("step2-badge").className = "step-badge";
+        document.getElementById("step2-badge").innerText =
+          "STEP 2 — START QUIZ";
+
+        const startBtn = document.getElementById("btn-start");
+        startBtn.disabled = false;
+        startBtn.innerText = "Start Quiz ⚡";
+      }
+
+      function closeLnurlAuthModal() {
+        document.getElementById("lnurl-modal").classList.remove("active");
+        if (authPollTimer) {
+          clearInterval(authPollTimer);
+          authPollTimer = null;
+        }
+      }
+
+      function copyLnurlText() {
+        if (!currentLnurl) return;
+        navigator.clipboard.writeText(currentLnurl);
+      }
+
+      // On page load — if a session cookie is already present, skip the
+      // wallet creation step.
+      (async () => {
+        try {
+          const res = await fetch(`${API}/api/auth/me`, {
+            credentials: "include",
+          });
+          if (!res.ok) return;
+          const me = await res.json();
+          if (me.lightning_address) {
+            finishLogin(me.lightning_address);
+          }
+        } catch {
+          // No session — normal first visit.
+        }
+      })();
     </script>
   </body>
 </html>

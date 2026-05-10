@@ -4,6 +4,10 @@ const express = require('express');
 const cors = require('cors');
 const yaml = require('js-yaml');
 const sqlite3 = require('sqlite3').verbose();
+const cookieParser = require('cookie-parser');
+const { bech32 } = require('bech32');
+const secp = require('@noble/secp256k1');
+const crypto = require('crypto');
 const path = require('path');
 
 const app = express();
@@ -18,8 +22,12 @@ if (!LNBITS_URL || !LNBITS_ADMIN_KEY) {
   process.exit(1);
 }
 
+// Caddy fronts us in production — trust X-Forwarded-* so req.secure / protocol
+// reflect the public scheme (needed for `secure` cookies and the LNURL host).
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -76,6 +84,40 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
     )`, (err) => {
       if (err) console.error('❌ Table error:', err.message);
       else console.log('✅ Users table ready');
+    });
+
+    // LNURL-auth: a linking_key (secp256k1 pubkey hex) IS the user identity.
+    // The lightning_address is set on first login (payout target only).
+    db.run(`CREATE TABLE IF NOT EXISTS auth_users (
+      linking_key TEXT PRIMARY KEY,
+      lightning_address TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => {
+      if (err) console.error('❌ Table error:', err.message);
+      else console.log('✅ auth_users table ready');
+    });
+
+    // Pending LNURL-auth challenges. linking_key is null until the wallet
+    // signs the k1 successfully via the callback.
+    db.run(`CREATE TABLE IF NOT EXISTS auth_challenges (
+      k1 TEXT PRIMARY KEY,
+      linking_key TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      expires_at DATETIME NOT NULL
+    )`, (err) => {
+      if (err) console.error('❌ Table error:', err.message);
+      else console.log('✅ auth_challenges table ready');
+    });
+
+    // Browser sessions issued after a successful LNURL-auth flow.
+    db.run(`CREATE TABLE IF NOT EXISTS auth_sessions (
+      session_id TEXT PRIMARY KEY,
+      linking_key TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => {
+      if (err) console.error('❌ Table error:', err.message);
+      else console.log('✅ auth_sessions table ready');
     });
   }
 });
@@ -200,7 +242,7 @@ async function fetchQuestion(id, lang = 'en') {
 // Body: { lightningAddress }
 // ------------------------------------------
 app.post('/api/start', async (req, res) => {
-  const { lightningAddress } = req.body;
+  const lightningAddress = await resolveLightningAddress(req, req.body.lightningAddress);
 
   if (!lightningAddress || !lightningAddress.includes('@') || !lightningAddress.includes('.')) {
     return res.status(400).json({ errore: 'Invalid Lightning Address format.' });
@@ -253,7 +295,8 @@ app.post('/api/start', async (req, res) => {
 //   Used when the user has no custodial wallet yet
 // ------------------------------------------
 app.post('/api/submit', async (req, res) => {
-  const { lightningAddress, score, total } = req.body;
+  const { score, total } = req.body;
+  const lightningAddress = await resolveLightningAddress(req, req.body.lightningAddress);
   const satsEarned = (score === total) ? 1500 : 0;
 
   if (!lightningAddress || score === undefined || total === undefined) {
@@ -557,6 +600,220 @@ app.get('/api/wallet-balance/:lightningAddress', async (req, res) => {
       }
     }
   );
+});
+
+// ==========================================
+// LNURL-AUTH (LUD-04) — wallet-signed login
+// ==========================================
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;          // 5 min
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;  // 30 days
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) =>
+    db.get(sql, params, (err, row) => err ? reject(err) : resolve(row || null))
+  );
+}
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) =>
+    db.run(sql, params, function (err) { err ? reject(err) : resolve(this); })
+  );
+}
+
+function getPublicBaseUrl(req) {
+  // With `trust proxy` on, req.protocol and req.get('host') already reflect
+  // the public scheme/host forwarded by Caddy.
+  return `${req.protocol}://${req.get('host')}`;
+}
+
+function encodeLnurl(url) {
+  // bech32 encode of UTF-8 bytes with HRP "lnurl", limit 1023 chars.
+  const words = bech32.toWords(Buffer.from(url, 'utf8'));
+  return bech32.encode('lnurl', words, 1023).toUpperCase();
+}
+
+function verifyLnurlAuthSig(k1Hex, sigHex, keyHex) {
+  // LUD-04: DER-encoded ECDSA over the raw 32-byte k1, secp256k1, compressed pubkey.
+  try {
+    const k1 = Buffer.from(k1Hex, 'hex');
+    const sigBytes = Buffer.from(sigHex, 'hex');
+    const key = Buffer.from(keyHex, 'hex');
+    if (k1.length !== 32 || key.length !== 33) return false;
+    return secp.verify(sigBytes, k1, key);
+  } catch {
+    return false;
+  }
+}
+
+async function createSession(linkingKey) {
+  const sessionId = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+  await dbRun(
+    `INSERT INTO auth_sessions (session_id, linking_key, expires_at) VALUES (?, ?, ?)`,
+    [sessionId, linkingKey, expiresAt]
+  );
+  return sessionId;
+}
+
+async function getSession(sessionId) {
+  if (!sessionId) return null;
+  return dbGet(
+    `SELECT s.session_id, s.linking_key, s.expires_at, u.lightning_address
+     FROM auth_sessions s
+     LEFT JOIN auth_users u ON u.linking_key = s.linking_key
+     WHERE s.session_id = ? AND s.expires_at > datetime('now')`,
+    [sessionId]
+  );
+}
+
+function setSessionCookie(res, sessionId) {
+  res.cookie('quiz_session', sessionId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: SESSION_TTL_MS,
+    path: '/'
+  });
+}
+
+async function requireAuth(req, res, next) {
+  const session = await getSession(req.cookies?.quiz_session);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
+  req.session = session;
+  next();
+}
+
+// Resolve the lightning address used for a quiz attempt.
+// Priority: active LNURL-auth session → request body. Returns null if neither.
+async function resolveLightningAddress(req, fallback) {
+  const session = await getSession(req.cookies?.quiz_session);
+  if (session?.lightning_address) return session.lightning_address;
+  return fallback || null;
+}
+
+// ------------------------------------------
+// GET /api/auth/lnurl/init
+// Frontend bootstraps the flow. Returns a fresh k1 + bech32 LNURL to QR.
+// ------------------------------------------
+app.get('/api/auth/lnurl/init', async (req, res) => {
+  try {
+    const k1 = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS).toISOString();
+    await dbRun(
+      `INSERT INTO auth_challenges (k1, expires_at) VALUES (?, ?)`,
+      [k1, expiresAt]
+    );
+    const callback = `${getPublicBaseUrl(req)}/api/auth/lnurl/callback?tag=login&k1=${k1}`;
+    res.json({ k1, lnurl: encodeLnurl(callback), expires_at: expiresAt });
+  } catch (err) {
+    console.error('lnurl init error:', err);
+    res.status(500).json({ error: 'init failed' });
+  }
+});
+
+// ------------------------------------------
+// GET /api/auth/lnurl/callback?tag=login&k1=&sig=&key=
+// The user's wallet hits this after signing. Per LUD-04 we always reply JSON
+// {status:"OK"} or {status:"ERROR",reason:"…"}.
+// ------------------------------------------
+app.get('/api/auth/lnurl/callback', async (req, res) => {
+  const { tag, k1, sig, key } = req.query;
+  if (tag !== 'login') return res.json({ status: 'ERROR', reason: 'Invalid tag' });
+  if (!k1 || !sig || !key) return res.json({ status: 'ERROR', reason: 'Missing params' });
+  try {
+    const challenge = await dbGet(
+      `SELECT linking_key, expires_at FROM auth_challenges WHERE k1 = ?`, [k1]
+    );
+    if (!challenge) return res.json({ status: 'ERROR', reason: 'Unknown challenge' });
+    if (new Date(challenge.expires_at) < new Date()) {
+      return res.json({ status: 'ERROR', reason: 'Expired' });
+    }
+    if (challenge.linking_key) {
+      return res.json({ status: 'ERROR', reason: 'Already used' });
+    }
+    if (!verifyLnurlAuthSig(k1, sig, key)) {
+      return res.json({ status: 'ERROR', reason: 'Bad signature' });
+    }
+    await dbRun(`UPDATE auth_challenges SET linking_key = ? WHERE k1 = ?`, [key, k1]);
+    await dbRun(
+      `INSERT INTO auth_users (linking_key) VALUES (?)
+       ON CONFLICT(linking_key) DO NOTHING`, [key]
+    );
+    res.json({ status: 'OK' });
+  } catch (err) {
+    console.error('lnurl callback error:', err);
+    res.json({ status: 'ERROR', reason: 'Internal error' });
+  }
+});
+
+// ------------------------------------------
+// GET /api/auth/lnurl/status?k1=
+// Frontend polls this. Once the wallet has authenticated, mints a session
+// cookie and returns the user.
+// ------------------------------------------
+app.get('/api/auth/lnurl/status', async (req, res) => {
+  const { k1 } = req.query;
+  if (!k1) return res.status(400).json({ error: 'k1 required' });
+  try {
+    const challenge = await dbGet(
+      `SELECT linking_key, expires_at FROM auth_challenges WHERE k1 = ?`, [k1]
+    );
+    if (!challenge) return res.status(404).json({ error: 'Unknown challenge' });
+    if (!challenge.linking_key) {
+      const expired = new Date(challenge.expires_at) < new Date();
+      return res.json({ authenticated: false, expired });
+    }
+    const user = await dbGet(
+      `SELECT linking_key, lightning_address FROM auth_users WHERE linking_key = ?`,
+      [challenge.linking_key]
+    );
+    const sessionId = await createSession(challenge.linking_key);
+    setSessionCookie(res, sessionId);
+    res.json({
+      authenticated: true,
+      user: { linking_key: user.linking_key, lightning_address: user.lightning_address }
+    });
+  } catch (err) {
+    console.error('lnurl status error:', err);
+    res.status(500).json({ error: 'status failed' });
+  }
+});
+
+// ------------------------------------------
+// GET /api/auth/me
+// ------------------------------------------
+app.get('/api/auth/me', async (req, res) => {
+  const session = await getSession(req.cookies?.quiz_session);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
+  res.json({
+    linking_key: session.linking_key,
+    lightning_address: session.lightning_address
+  });
+});
+
+// ------------------------------------------
+// POST /api/auth/logout
+// ------------------------------------------
+app.post('/api/auth/logout', async (req, res) => {
+  const sid = req.cookies?.quiz_session;
+  if (sid) await dbRun(`DELETE FROM auth_sessions WHERE session_id = ?`, [sid]);
+  res.clearCookie('quiz_session', { path: '/' });
+  res.json({ ok: true });
+});
+
+// ------------------------------------------
+// POST /api/auth/payout-address
+// Called once after a fresh LNURL-auth login to register where rewards go.
+// ------------------------------------------
+app.post('/api/auth/payout-address', requireAuth, async (req, res) => {
+  const { lightning_address } = req.body || {};
+  if (!lightning_address || !lightning_address.includes('@') || !lightning_address.includes('.')) {
+    return res.status(400).json({ error: 'Invalid Lightning Address' });
+  }
+  await dbRun(
+    `UPDATE auth_users SET lightning_address = ? WHERE linking_key = ?`,
+    [lightning_address, req.session.linking_key]
+  );
+  res.json({ ok: true, lightning_address });
 });
 
 // ==========================================
