@@ -18,7 +18,8 @@ Signet is a safe Bitcoin test network — it works exactly like real Bitcoin but
 - Pay up to 10,000 sats to a Signet Lightning invoice (`lnbcrt...`)
 - Invoice validation with live preview
 - Captcha to prevent abuse
-- Rate limiting (configurable, disabled by default for dev)
+- Rate limiting (24h by default, configurable through `.env`)
+- Daily distribution ceilings for anti-abuse
 
 ### New User Guides
 - **Bitcoin:** OS-aware setup guides for Bitcoin Core, Bitcoin Knots, and Sparrow Wallet
@@ -33,7 +34,7 @@ Signet is a safe Bitcoin test network — it works exactly like real Bitcoin but
 ### General
 - CAPTCHA on both Bitcoin and Lightning forms
 - SQLite-backed rate limiting per address / IP
-- `/api/status` endpoint showing Bitcoin node and LND online status
+- `/api/status` endpoint showing Bitcoin/LND status, wallet balance, limits, daily distribution totals, and recent drips
 - Live node status indicator in the Lightning section
 - Mobile-responsive layout
 
@@ -42,38 +43,40 @@ Signet is a safe Bitcoin test network — it works exactly like real Bitcoin but
 - Python 3.8+
 - Bitcoin Core running on Signet (custom PlanB Signet)
 - LND running on Signet (for Lightning faucet)
-- The following Python packages:
+- The Python packages in `requirements.txt`:
 
 ```bash
-pip install flask python-bitcoinrpc
+python3 -m pip install -r requirements.txt
 ```
 
 ## Configuration
 
-Open `web_faucet.py` and update the RPC settings to match your `bitcoin.conf`:
+Copy the example file and fill deployment-specific values:
 
-```python
-RPC_USER = 'your_rpc_username'
-RPC_PASSWORD = 'your_rpc_password'
-RPC_HOST = '127.0.0.1'
-RPC_PORT = 38332
-RPC_WALLET = 'your_wallet_name'
+```bash
+cp .env.example .env
 ```
 
-LND settings (adjust path and port if different):
+Important keys:
 
-```python
-LNCLI_BASE = ['lncli', '--lnddir=/home/YOUR_USERNAME/.lnd-signet', '--rpcserver=127.0.0.1:10010']
-LN_MAX_SATS = 10000
-```
+| Key | Purpose |
+|---|---|
+| `FLASK_SECRET_KEY` | Required production session secret; never commit the real value. |
+| `RPC_USER`, `RPC_PASSWORD`, `RPC_HOST`, `RPC_PORT`, `RPC_WALLET` | Bitcoin Core RPC endpoint exposed by the Signet stack. |
+| `BTC_AMOUNT`, `EXPLORER_URL` | On-chain drip amount and explorer base URL. |
+| `RATE_LIMIT_HOURS`, `BTC_DAILY_LIMIT_SATS`, `LN_DAILY_LIMIT_SATS` | Anti-abuse limits. Defaults are production-safe. |
+| `LNCLI_BIN`, `LND_DIR`, `LND_RPCSERVER`, `LN_MAX_SATS` | Temporary local `lncli` backend until the Squad 3 LNbits contract replaces it. |
+| `DB_PATH`, `LOG_DIR` | Runtime SQLite and log locations. |
 
-Rate limiting (set to 24 before going public):
-
-```python
-RATE_LIMIT_HOURS = 0  # 0 = disabled (dev mode), 24 = production
-```
+For throwaway local development only, set `ALLOW_INSECURE_DEV_SECRET=true` if you do not want to generate a Flask secret yet.
 
 ## Running
+
+```bash
+./start_all.sh
+```
+
+Or directly:
 
 ```bash
 python3 web_faucet.py

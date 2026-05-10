@@ -45,8 +45,12 @@
 ## Public contracts (consumed by Squads 1 & 2)
 
 - `bitcoind` RPC: *TBD*
+  - Faucet env: `RPC_HOST`, `RPC_PORT`, `RPC_USER`, `RPC_PASSWORD`, `RPC_WALLET`
 - LND gRPC / REST: *TBD*
+  - Faucet temporary env: `LNCLI_BIN`, `LND_DIR`, `LND_RPCSERVER`
 - LNbits API base URL: *TBD*
+  - Future faucet env once Squad 3 publishes the contract: `LNBITS_URL`, scoped API key, and payment endpoint semantics.
+  - Quiz env already expects `LNBITS_URL` + `LNBITS_ADMIN_KEY`; rotate any key that was ever committed elsewhere before VPS deployment.
 
 ## Operational procedures
 

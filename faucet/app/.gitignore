@@ -2,4 +2,6 @@ faucet_requests.json
 __pycache__/
 *.pyc
 *.pyo
+*.db
 .env
+logs/
