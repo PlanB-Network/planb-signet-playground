@@ -429,59 +429,32 @@
           🏆 Score <strong>5/5</strong> and win
           <strong>1500 sats</strong>!<br />
           <span style="font-size: 12px; color: #aaa"
-            >One attempt per day · Custodial wallet required</span
+            >One attempt per day · Sign in with any Lightning wallet</span
           >
         </div>
 
-        <!-- Green badge: shown after wallet creation -->
-        <div class="wallet-badge" id="wallet-badge">
-          ✅ Wallet active — you're ready to play!
-          <span id="wallet-badge-address"></span>
-        </div>
-
-        <!-- STEP 1 — Create wallet (required) -->
-        <div class="wallet-section" id="wallet-section">
-          <div class="step-badge" id="step1-badge">STEP 1 — REQUIRED</div>
-          <p>
-            🏦 <strong style="color: #fff">Create your custodial wallet</strong
-            ><br />
-            Enter your Lightning Address and an optional name, then create your
-            wallet. You
-            <strong style="color: #f7931a">cannot play</strong> without
-            completing this step.
-          </p>
-          <input
-            type="text"
-            id="input-address"
-            placeholder="your@lightningaddress.com"
-          />
-          <input
-            type="text"
-            id="input-username"
-            placeholder="Your name (optional, e.g. Mario)"
-            style="margin-bottom: 12px"
-          />
-          <button
-            class="btn-wallet"
-            id="btn-create-wallet"
-            onclick="createWallet()"
-          >
-            Create Custodial Wallet 🏦
+        <!-- Sign in (primary) -->
+        <div style="margin-top: 8px">
+          <button class="btn-primary" onclick="openLnurlAuthModal()">
+            ⚡ Sign in with your Lightning wallet
           </button>
-          <p id="wallet-status"></p>
+          <p style="color: #aaa; font-size: 13px; margin-top: 12px">
+            Don't have a Plan B Signet wallet?
+            <a
+              href="#"
+              onclick="
+                openWalletProvisioningModal();
+                return false;
+              "
+              style="color: #f7931a; text-decoration: underline"
+              >Get one free</a
+            >
+          </p>
         </div>
 
-        <!-- OR — log in with an existing Lightning wallet (LNURL-auth) -->
-        <div class="or-divider">or</div>
-        <button class="btn-lightning-login" onclick="openLnurlAuthModal()">
-          ⚡ Login with your Lightning wallet
-        </button>
-
-        <!-- STEP 2 — Start quiz (locked until step 1 is complete) -->
-        <div style="margin-top: 20px">
-          <div class="step-badge locked" id="step2-badge">
-            STEP 2 — START QUIZ
-          </div>
+        <!-- Start quiz (hidden until logged in) -->
+        <div id="play-section" style="margin-top: 20px; display: none">
+          <div class="step-badge done">✅ Signed in</div>
           <p
             id="error-msg"
             style="
@@ -491,13 +464,8 @@
               min-height: 20px;
             "
           ></p>
-          <button
-            class="btn-primary"
-            id="btn-start"
-            onclick="startQuiz()"
-            disabled
-          >
-            🔒 Create wallet first
+          <button class="btn-primary" id="btn-start" onclick="startQuiz()">
+            Start Quiz ⚡
           </button>
         </div>
       </div>
@@ -526,19 +494,39 @@
         <div class="score-display" id="final-score-display">0/5</div>
         <p class="score-label">correct answers</p>
         <div class="sats-display">
-          <p style="color: #aaa; margin-bottom: 4px">Sats earned</p>
+          <p style="color: #aaa; margin-bottom: 4px">Reward</p>
           <div class="amount" id="sats-earned-display">0 sats</div>
         </div>
-        <p id="payment-status">⏳ Processing...</p>
+        <p id="payment-status"></p>
 
-        <!-- Custodial wallet balance (only shown after a 5/5 payout) -->
-        <div class="wallet-result-box" id="wallet-result-box">
-          <div class="label">Your custodial wallet balance</div>
-          <div class="balance" id="wallet-balance-display">— sats</div>
+        <!-- LNURL-withdraw QR — only shown on a 5/5 -->
+        <div id="withdraw-box" style="display: none; margin-top: 16px">
+          <p style="color: #aaa; font-size: 13px; margin-bottom: 8px">
+            Scan with your Lightning wallet to claim your sats:
+          </p>
+          <div class="qr-box" id="withdraw-qr"></div>
+          <div class="lnurl-text" id="withdraw-lnurl-text"></div>
           <div
-            style="margin-top: 6px; font-size: 11px; color: #555"
-            id="wallet-id-display"
-          ></div>
+            style="
+              display: flex;
+              gap: 8px;
+              justify-content: center;
+              margin-top: 8px;
+            "
+          >
+            <a id="withdraw-open-btn" class="copy-btn" href="#"
+              >Open in wallet</a
+            >
+            <button class="copy-btn" onclick="copyWithdrawLnurl()">
+              Copy LNURL
+            </button>
+          </div>
+          <p
+            id="withdraw-status"
+            style="color: #aaa; font-size: 13px; margin-top: 12px"
+          >
+            Waiting for claim…
+          </p>
         </div>
       </div>
     </div>
@@ -580,13 +568,54 @@
       </div>
     </div>
 
+    <!-- Wallet provisioning modal (no-wallet users) -->
+    <div class="modal-overlay" id="wallet-provisioning-modal">
+      <div class="modal-card">
+        <h3>🏦 Get a Plan B Signet wallet</h3>
+
+        <div id="provisioning-step-1">
+          <p style="color: #aaa; font-size: 14px; margin-top: 8px">
+            We'll create a Lightning wallet on the Plan B Signet for you. You
+            install it on your phone by scanning a QR — your keys live on your
+            device, not on this site.
+          </p>
+          <button class="btn-primary" onclick="provisionWallet()">
+            Create my wallet
+          </button>
+        </div>
+
+        <div id="provisioning-step-2" style="display: none">
+          <p style="color: #aaa; font-size: 13px; margin-top: 8px">
+            <strong style="color: #fff">Step 1.</strong> Open your phone camera
+            (or LNbits app) and scan:
+          </p>
+          <div class="qr-box" id="provisioning-qr"></div>
+          <div class="lnurl-text" id="provisioning-url-text"></div>
+          <p style="color: #aaa; font-size: 13px; margin-top: 12px">
+            <strong style="color: #fff">Step 2.</strong> Add the LNbits page to
+            your home screen — it becomes your wallet app.
+          </p>
+          <p style="color: #aaa; font-size: 13px; margin-top: 12px">
+            <strong style="color: #fff">Step 3.</strong> Come back here and sign
+            in with that wallet.
+          </p>
+          <button class="btn-primary" onclick="finishProvisioningAndSignIn()">
+            I've installed it — sign me in ⚡
+          </button>
+        </div>
+
+        <p class="status-line" id="provisioning-status-line"></p>
+        <button class="close-btn" onclick="closeWalletProvisioningModal()">
+          Close
+        </button>
+      </div>
+    </div>
+
     <script>
       let questions = [];
       let currentIndex = 0;
       let score = 0;
-      let lightningAddress = "";
-      let hasCustodialWallet = false;
-      let isLnurlAuthed = false;
+      let isSignedIn = false;
       let authPollTimer = null;
 
       // Empty base = same-origin: Express serves these static files itself, so
@@ -594,101 +623,14 @@
       const API = "";
 
       // ────────────────────────────────────
-      // STEP 1 — CREATE CUSTODIAL WALLET (required)
-      // POST /api/create-user
-      // ────────────────────────────────────
-      async function createWallet() {
-        const addressInput = document.getElementById("input-address");
-        const usernameInput = document.getElementById("input-username");
-        const statusEl = document.getElementById("wallet-status");
-        const btn = document.getElementById("btn-create-wallet");
-
-        const address = addressInput.value.trim();
-        const username = usernameInput.value.trim();
-
-        if (!address || !address.includes("@") || !address.includes(".")) {
-          statusEl.style.color = "#dc3545";
-          statusEl.innerText =
-            "⚠️ Enter a valid Lightning Address (e.g. name@domain.com)";
-          return;
-        }
-
-        btn.disabled = true;
-        btn.innerText = "Creating wallet...";
-        statusEl.style.color = "#aaa";
-        statusEl.innerText = "⏳ Contacting LNbits...";
-
-        try {
-          const response = await fetch(`${API}/api/create-user`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              lightningAddress: address,
-              username: username || "",
-              email: "",
-            }),
-          });
-
-          const data = await response.json();
-
-          if (!response.ok) {
-            statusEl.style.color = "#dc3545";
-            statusEl.innerText =
-              "❌ " + (data.error || "Error creating wallet");
-            btn.disabled = false;
-            btn.innerText = "Create Custodial Wallet 🏦";
-            return;
-          }
-
-          // ✅ Wallet created or already exists
-          hasCustodialWallet = true;
-          lightningAddress = address;
-
-          statusEl.style.color = "#28a745";
-          statusEl.innerText = data.already_existed
-            ? "✅ Wallet already active!"
-            : "✅ Wallet created successfully!";
-
-          btn.innerText = "✅ Wallet Active";
-
-          // Show green badge
-          const badge = document.getElementById("wallet-badge");
-          const badgeAddr = document.getElementById("wallet-badge-address");
-          badge.style.display = "block";
-          badgeAddr.innerText = data.username
-            ? `${data.username} — ${address}`
-            : address;
-
-          // Update Step 1 → done, Step 2 → unlocked
-          document.getElementById("step1-badge").className = "step-badge done";
-          document.getElementById("step1-badge").innerText = "STEP 1 — ✅ DONE";
-          document.getElementById("step2-badge").className = "step-badge";
-          document.getElementById("step2-badge").innerText =
-            "STEP 2 — START QUIZ";
-
-          // Unlock Start Quiz button
-          const startBtn = document.getElementById("btn-start");
-          startBtn.disabled = false;
-          startBtn.innerText = "Start Quiz ⚡";
-        } catch (err) {
-          statusEl.style.color = "#dc3545";
-          statusEl.innerText = "❌ Connection error. Is the server running?";
-          btn.disabled = false;
-          btn.innerText = "Create Custodial Wallet 🏦";
-        }
-      }
-
-      // ────────────────────────────────────
-      // STEP 2 — START QUIZ
-      // POST /api/start
+      // START QUIZ (requires LNURL-auth session cookie)
       // ────────────────────────────────────
       async function startQuiz() {
         const errorMsg = document.getElementById("error-msg");
         errorMsg.innerText = "";
 
-        // Double-check: wallet is required
-        if (!hasCustodialWallet) {
-          errorMsg.innerText = "⚠️ You must create a custodial wallet first!";
+        if (!isSignedIn) {
+          errorMsg.innerText = "⚠️ Please sign in first.";
           return;
         }
 
@@ -699,8 +641,9 @@
         try {
           const response = await fetch(`${API}/api/start`, {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lightningAddress }),
+            body: "{}",
           });
 
           const data = await response.json();
@@ -799,6 +742,9 @@
       // RESULTS SCREEN + SUBMIT
       // POST /api/submit
       // ────────────────────────────────────
+      let withdrawPollTimer = null;
+      let currentWithdrawLnurl = null;
+
       async function showResults() {
         showScreen("screen-result");
         const total = questions.length;
@@ -809,7 +755,6 @@
         document.getElementById("sats-earned-display").innerText =
           satsEarned > 0 ? satsEarned + " sats 🎉" : "0 sats";
 
-        // Different title depending on the result
         document.getElementById("result-title").innerText =
           score === total
             ? "🏆 Perfect Score! You won!"
@@ -819,58 +764,81 @@
 
         const statusEl = document.getElementById("payment-status");
         statusEl.style.color = "#aaa";
-        statusEl.innerText = satsEarned > 0 ? "⏳ Sending 1500 sats..." : "";
+        statusEl.innerText = "";
 
         try {
           const response = await fetch(`${API}/api/submit`, {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lightningAddress, score, total }),
+            body: JSON.stringify({ score, total }),
           });
-
           const data = await response.json();
 
-          if (response.ok && data.successo) {
-            if (satsEarned > 0) {
-              statusEl.style.color = "#28a745";
-              statusEl.innerText = "✅ " + data.messaggio;
-              fetchAndShowBalance();
-            } else {
-              statusEl.style.color = "#aaa";
-              statusEl.innerText = "💡 Score 5/5 tomorrow to win 1500 sats!";
-            }
-          } else {
+          if (!response.ok || !data.successo) {
             statusEl.style.color = "#dc3545";
-            statusEl.innerText = "❌ " + (data.errore || "Payment error");
+            statusEl.innerText = "❌ " + (data.errore || "Submit error");
+            return;
+          }
+
+          if (data.withdraw) {
+            await renderWithdrawQr(data.withdraw);
+            startWithdrawPolling(data.withdraw.k1);
+          } else {
+            statusEl.style.color = "#aaa";
+            statusEl.innerText = "💡 Score 5/5 tomorrow to win 1500 sats!";
           }
         } catch (err) {
           statusEl.style.color = "#dc3545";
-          statusEl.innerText = "❌ Connection error during payment.";
+          statusEl.innerText = "❌ Connection error.";
         }
       }
 
-      // ────────────────────────────────────
-      // READ CUSTODIAL WALLET BALANCE
-      // GET /api/wallet-balance/:lightningAddress
-      // ────────────────────────────────────
-      async function fetchAndShowBalance() {
-        try {
-          const response = await fetch(
-            `${API}/api/wallet-balance/${encodeURIComponent(lightningAddress)}`,
-          );
-          if (!response.ok) return;
-          const data = await response.json();
+      async function renderWithdrawQr(withdraw) {
+        currentWithdrawLnurl = withdraw.lnurl;
+        const box = document.getElementById("withdraw-box");
+        const qr = document.getElementById("withdraw-qr");
+        qr.innerHTML = "";
+        const canvas = document.createElement("canvas");
+        qr.appendChild(canvas);
+        await QRCode.toCanvas(canvas, "lightning:" + withdraw.lnurl, {
+          width: 240,
+          margin: 1,
+        });
+        document.getElementById("withdraw-lnurl-text").innerText =
+          withdraw.lnurl;
+        document.getElementById("withdraw-open-btn").href =
+          "lightning:" + withdraw.lnurl;
+        box.style.display = "block";
+      }
 
-          const box = document.getElementById("wallet-result-box");
-          const balanceEl = document.getElementById("wallet-balance-display");
-          const idEl = document.getElementById("wallet-id-display");
+      function startWithdrawPolling(k1) {
+        if (withdrawPollTimer) clearInterval(withdrawPollTimer);
+        const statusEl = document.getElementById("withdraw-status");
+        withdrawPollTimer = setInterval(async () => {
+          try {
+            const res = await fetch(
+              `${API}/api/withdraw/status?k1=${encodeURIComponent(k1)}`,
+              { credentials: "include" },
+            );
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.claimed) {
+              clearInterval(withdrawPollTimer);
+              statusEl.style.color = "#28a745";
+              statusEl.innerText = "✅ Claimed! Check your wallet ⚡";
+            } else if (data.expired) {
+              clearInterval(withdrawPollTimer);
+              statusEl.style.color = "#dc3545";
+              statusEl.innerText = "⚠️ Expired before claim.";
+            }
+          } catch {}
+        }, 3000);
+      }
 
-          box.style.display = "block";
-          balanceEl.innerText = data.balance_sats + " sats";
-          idEl.innerText = "Wallet ID: " + data.wallet_id;
-        } catch (err) {
-          // Silent
-        }
+      function copyWithdrawLnurl() {
+        if (currentWithdrawLnurl)
+          navigator.clipboard.writeText(currentWithdrawLnurl);
       }
 
       // ────────────────────────────────────
@@ -948,64 +916,14 @@
       }
 
       function onLnurlAuthSuccess(user) {
-        isLnurlAuthed = true;
-        const statusLine = document.getElementById("lnurl-status-line");
-
-        if (!user.lightning_address) {
-          // First-time login — ask for payout address
-          statusLine.innerText = "✅ Authenticated.";
-          document.getElementById("lnurl-qr-step").style.display = "none";
-          document.getElementById("lnurl-payout-step").style.display = "block";
-          return;
-        }
-
-        finishLogin(user.lightning_address);
+        finishLogin();
       }
 
-      async function savePayoutAddress() {
-        const input = document.getElementById("payout-address-input");
-        const statusLine = document.getElementById("lnurl-status-line");
-        const addr = input.value.trim();
-        if (!addr || !addr.includes("@") || !addr.includes(".")) {
-          statusLine.innerText = "⚠️ Enter a valid Lightning Address.";
-          return;
-        }
-        statusLine.innerText = "Saving…";
-        try {
-          const res = await fetch(`${API}/api/auth/payout-address`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ lightning_address: addr }),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "save failed");
-          finishLogin(addr);
-        } catch (err) {
-          statusLine.innerText = "❌ " + err.message;
-        }
-      }
-
-      function finishLogin(address) {
-        lightningAddress = address;
+      function finishLogin() {
+        isSignedIn = true;
         closeLnurlAuthModal();
-
-        // Mirror the createWallet() unlock flow — same UX outcome.
-        const badge = document.getElementById("wallet-badge");
-        const badgeAddr = document.getElementById("wallet-badge-address");
-        badge.style.display = "block";
-        badgeAddr.innerText = "⚡ " + address;
-
-        document.getElementById("step1-badge").className = "step-badge done";
-        document.getElementById("step1-badge").innerText =
-          "STEP 1 — ✅ LIGHTNING LOGIN";
-        document.getElementById("step2-badge").className = "step-badge";
-        document.getElementById("step2-badge").innerText =
-          "STEP 2 — START QUIZ";
-
-        const startBtn = document.getElementById("btn-start");
-        startBtn.disabled = false;
-        startBtn.innerText = "Start Quiz ⚡";
+        closeWalletProvisioningModal();
+        document.getElementById("play-section").style.display = "block";
       }
 
       function closeLnurlAuthModal() {
@@ -1021,18 +939,78 @@
         navigator.clipboard.writeText(currentLnurl);
       }
 
-      // On page load — if a session cookie is already present, skip the
-      // wallet creation step.
+      // ────────────────────────────────────
+      // WALLET PROVISIONING (no-wallet users)
+      // POST /api/wallet/create → returns { pairing_url }
+      // ────────────────────────────────────
+      let currentPairingUrl = null;
+
+      function openWalletProvisioningModal() {
+        document
+          .getElementById("provisioning-step-1")
+          .style.setProperty("display", "block");
+        document.getElementById("provisioning-step-2").style.display = "none";
+        document.getElementById("provisioning-status-line").innerText = "";
+        document
+          .getElementById("wallet-provisioning-modal")
+          .classList.add("active");
+      }
+
+      function closeWalletProvisioningModal() {
+        document
+          .getElementById("wallet-provisioning-modal")
+          .classList.remove("active");
+      }
+
+      async function provisionWallet() {
+        const statusLine = document.getElementById("provisioning-status-line");
+        statusLine.innerText = "Creating your wallet…";
+        try {
+          const res = await fetch(`${API}/api/wallet/create`, {
+            method: "POST",
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+          }
+          const data = await res.json();
+          currentPairingUrl = data.pairing_url;
+
+          const qrBox = document.getElementById("provisioning-qr");
+          qrBox.innerHTML = "";
+          const canvas = document.createElement("canvas");
+          qrBox.appendChild(canvas);
+          await QRCode.toCanvas(canvas, data.pairing_url, {
+            width: 240,
+            margin: 1,
+          });
+          document.getElementById("provisioning-url-text").innerText =
+            data.pairing_url;
+          document.getElementById("provisioning-step-1").style.display = "none";
+          document.getElementById("provisioning-step-2").style.display =
+            "block";
+          statusLine.innerText = "";
+        } catch (err) {
+          statusLine.innerText = "❌ " + err.message;
+        }
+      }
+
+      // After the user has paired the wallet on their phone, we hand them off
+      // to the LNURL-auth modal so they can sign in with the freshly-paired
+      // PWA. Returning users skip this step entirely.
+      function finishProvisioningAndSignIn() {
+        closeWalletProvisioningModal();
+        openLnurlAuthModal();
+      }
+
+      // On page load — restore session if the cookie is still valid.
       (async () => {
         try {
           const res = await fetch(`${API}/api/auth/me`, {
             credentials: "include",
           });
           if (!res.ok) return;
-          const me = await res.json();
-          if (me.lightning_address) {
-            finishLogin(me.lightning_address);
-          }
+          finishLogin();
         } catch {
           // No session — normal first visit.
         }

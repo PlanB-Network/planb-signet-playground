@@ -20,59 +20,73 @@ in this monorepo.
 - 21 questions sourced live from
   [`PlanB-Network/bitcoin-educational-content`](https://github.com/PlanB-Network/bitcoin-educational-content)
   (`courses/btc101/quizz/<id>/en.yml`).
-- 5 questions per day, deterministically shuffled per `(date, lightningAddress)`
+- 5 questions per day, deterministically shuffled per `(date, linking_key)`
   so each user gets a stable but personalised set.
-- One attempt per Lightning address per day (UTC).
-- Reward: 1500 sats only on a perfect 5/5.
-- Two payout paths:
-  - **A. Custodial** — if the user has registered via `/api/create-user`,
-    LNbits creates a wallet under the user, the quiz creates an invoice on it,
-    and the admin "Big Pot" wallet pays that invoice. Funds stay inside LNbits.
-  - **B. External LNURL fallback** — if the user has no custodial wallet, the
-    server resolves their Lightning address via LNURL-pay and the admin wallet
-    pays the resulting invoice.
-- All attempts and payments are logged to a local SQLite DB (`winners_log.db`).
+- One attempt per linking_key per day (UTC).
+- Reward: 1500 sats only on a perfect 5/5, claimed via LNURL-withdraw.
+- Attempts and withdraws are logged to a local SQLite DB.
+
+## Identity & payout model
+
+- **Identity** = LNURL-auth `linking_key` (secp256k1 pubkey, deterministic per
+  `(wallet, domain)` per LUD-05). Wallets sign a challenge; we never store a
+  password, email, or Lightning address.
+- **Wallets** are kept on the user's side. Users who arrive without one click
+  "Get one free" and we provision a fresh LNbits wallet on the Plan B Signet,
+  handing them a pairing URL their phone can scan to install it as a PWA. The
+  pairing URL is the only credential they receive.
+- **Payout** is **LNURL-withdraw** (LUD-03). On a 5/5, we mint a withdraw QR
+  the user scans with their wallet. The wallet pushes a bolt11; the Big Pot
+  admin wallet on LNbits pays it. Sats land in whatever wallet did the scan.
+- The Plan B custom Signet means **all wallets on both ends live in our LNbits
+  instance** (signet bolt11 is not routable to mainnet). Mainnet wallets work
+  for LNURL-auth signing, but **not** for receiving the withdraw — by design,
+  the funnel pushes those users to provision a signet wallet.
 
 ## API
 
-### Quiz endpoints
+### Quiz
 
-| Method | Path                                    | Body / Params                             | Purpose                                                             |
-| ------ | --------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------- |
-| `POST` | `/api/create-user`                      | `{ lightningAddress, username?, email? }` | Create or fetch a custodial wallet on LNbits                        |
-| `GET`  | `/api/wallet-balance/:lightningAddress` | —                                         | Read the user's custodial wallet balance                            |
-| `POST` | `/api/start`                            | `{ lightningAddress? }`                   | Start today's quiz; identity comes from session cookie if logged in |
-| `POST` | `/api/submit`                           | `{ score, total, lightningAddress? }`     | Record attempt + trigger payout if 5/5                              |
-| `GET`  | `/api/logs`                             | —                                         | List all attempts (newest first)                                    |
+| Method | Path          | Auth    | Purpose                                                                 |
+| ------ | ------------- | ------- | ----------------------------------------------------------------------- |
+| `POST` | `/api/start`  | session | Start today's quiz, returns 5 questions seeded by `(date, linking_key)` |
+| `POST` | `/api/submit` | session | Log attempt; on 5/5 returns the LNURL-withdraw payload                  |
+| `GET`  | `/api/logs`   | —       | Audit list of attempts                                                  |
 
-### LNURL-auth endpoints (LUD-04)
+### LNURL-auth (LUD-04)
 
-The quiz implements LNURL-auth so a user with an existing Lightning wallet can
-log in by signing a challenge — no password, no email, no LN address re-typing
-on return visits.
+| Method | Path                         | Auth       | Purpose                                                      |
+| ------ | ---------------------------- | ---------- | ------------------------------------------------------------ |
+| `GET`  | `/api/auth/lnurl/init`       | —          | Generate `k1` + bech32 LNURL for the QR code                 |
+| `GET`  | `/api/auth/lnurl/callback`   | wallet sig | Wallet hits with `?tag=login&k1=&sig=&key=` (verifies ECDSA) |
+| `GET`  | `/api/auth/lnurl/status?k1=` | —          | Frontend polls; on success mints `quiz_session` cookie       |
+| `GET`  | `/api/auth/me`               | session    | Returns `{ linking_key }`                                    |
+| `POST` | `/api/auth/logout`           | session    | Clears the session                                           |
 
-| Method | Path                         | Auth       | Purpose                                                          |
-| ------ | ---------------------------- | ---------- | ---------------------------------------------------------------- |
-| `GET`  | `/api/auth/lnurl/init`       | —          | Generate a fresh `k1` + bech32 LNURL for the QR code             |
-| `GET`  | `/api/auth/lnurl/callback`   | wallet sig | Wallet hits this with `?tag=login&k1=&sig=&key=` to authenticate |
-| `GET`  | `/api/auth/lnurl/status?k1=` | —          | Frontend polls this; sets `quiz_session` cookie on success       |
-| `GET`  | `/api/auth/me`               | session    | Return the current user                                          |
-| `POST` | `/api/auth/logout`           | session    | Clear the session                                                |
-| `POST` | `/api/auth/payout-address`   | session    | Set/update the LN address rewards are sent to                    |
+### Wallet provisioning (anonymous)
 
-Identity model:
+| Method | Path                 | Auth | Purpose                                                                   |
+| ------ | -------------------- | ---- | ------------------------------------------------------------------------- |
+| `POST` | `/api/wallet/create` | —    | Creates a fresh LNbits user+wallet; returns `{ pairing_url }` for the PWA |
 
-- The `linkingKey` (secp256k1 pubkey, deterministic per wallet+domain per
-  LUD-05) IS the account ID. Stored in the `auth_users` table.
-- The Lightning address is just a payout target. Set once on first login,
-  reusable forever.
-- A successful LNURL-auth login mints a `quiz_session` cookie (httpOnly,
-  SameSite=Lax, 30-day TTL, `Secure` in production).
-- `/api/start` and `/api/submit` accept the session cookie as identity. The
-  body's `lightningAddress` field is now optional and only used as a fallback.
+The pairing URL is `https://lnbits-signet.planb.academy/wallet?usr=&wal=` —
+opening it on a phone installs the LNbits PWA pre-loaded with the user's
+credentials. The wallet is decoupled from the LNURL-auth identity: after
+pairing, the user signs in with their freshly-installed PWA via the standard
+LNURL-auth flow.
 
-See [`test.http`](./test.http) for a runnable smoke-test sequence (including a
-node one-liner to sign a `k1` for headless callback testing).
+### LNURL-withdraw (LUD-03)
+
+| Method | Path                       | Auth    | Purpose                                                                                         |
+| ------ | -------------------------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/withdraw/lnurl?k1=`  | —       | Phase 1 returns `withdrawRequest` params; phase 2 (with `pr=`) pays the bolt11 from the Big Pot |
+| `GET`  | `/api/withdraw/status?k1=` | session | Frontend polls; returns `{ claimed, expired, … }`                                               |
+| `GET`  | `/api/withdraw/active`     | session | Returns the user's most recent unclaimed unexpired withdraw                                     |
+
+A successful 5/5 mints one withdraw_request with a 1-hour TTL; the row's
+`claimed_at`/`payment_hash` columns serve as the audit log.
+
+See [`test.http`](./test.http) for a runnable smoke-test sequence.
 
 ## Run locally
 
@@ -129,21 +143,13 @@ container rebuilds.
 curl -s https://quiz-signet.planb.academy/api/logs | jq
 ```
 
-## LNbits integration
+## LNbits calls (admin core API only — no extensions required)
 
-User and wallet provisioning uses the **admin core API** (no extension required):
-
-| Step                     | Endpoint                                   | Auth        |
-| ------------------------ | ------------------------------------------ | ----------- |
-| Create LNbits account    | `POST /users/api/v1/user`                  | Admin key   |
-| Create wallet for user   | `POST /users/api/v1/user/{user_id}/wallet` | Admin key   |
-| Create invoice on wallet | `POST /api/v1/payments` (out: false)       | Invoice key |
-| Big Pot pays invoice     | `POST /api/v1/payments` (out: true)        | Admin key   |
-| Read wallet balance      | `GET /api/v1/wallet`                       | Invoice key |
-
-The lightning address is stored in LNbits' `external_id` field (LNbits' username
-regex disallows `@` and `.com`). Local SQLite maps `lightning_address →
-lnbits_user_id, wallet_id, inkey, adminkey`.
+| Where                           | Endpoint                              | Auth      |
+| ------------------------------- | ------------------------------------- | --------- |
+| `/api/wallet/create`            | `POST /users/api/v1/user`             | Admin key |
+| `/api/wallet/create`            | `POST /users/api/v1/user/{id}/wallet` | Admin key |
+| `/api/withdraw/lnurl` (phase 2) | `POST /api/v1/payments` (`out: true`) | Admin key |
 
 ## Open items
 
@@ -152,10 +158,7 @@ lnbits_user_id, wallet_id, inkey, adminkey`.
       compromised).
 - [ ] Point DNS A record `quiz-signet.planb.academy` → VPS IP.
 - [ ] Decide whether the question pool (21 questions from `btc101`) is enough
-      seasonal coverage for daily play, or rotate across modules.
-- [ ] **Next PR**: full UX redesign with two clear entry doors (BYOW vs. issued
-      custodial), and a QR for pairing the LNbits PWA on the user's phone after
-      custodial wallet creation.
-- [ ] QA sign-off: full happy path on the VPS — register, take the quiz, score
-      5/5, see sats land. Test LNURL-auth login with at least Wallet of Satoshi
-      and Phoenix.
+      for daily play or rotate across modules.
+- [ ] QA sign-off: full happy path on the VPS — sign in via LNURL-auth (or
+      provision a wallet first, pair on phone, then sign in), score 5/5, scan
+      the withdraw QR, sats land in the paired wallet.
