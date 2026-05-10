@@ -1,35 +1,65 @@
 # Manual API smoke tests — open in REST Client (VS Code) or run via curl.
+# All quiz endpoints require an LNURL-auth session cookie (`quiz_session`).
 
-### Create / re-fetch a custodial user wallet
-POST http://localhost:3000/api/create-user
-Content-Type: application/json
+### LNURL-auth: bootstrap a challenge (returns k1 + bech32 LNURL)
+GET http://localhost:3000/api/auth/lnurl/init
 
-{
-  "lightningAddress": "alice@example.com",
-  "username": "alice",
-  "email": ""
-}
+### Headless LNURL-auth signing — paste the k1 from /init above:
+###   cd quiz/app && node -e '
+###     const s = require("@noble/secp256k1"); const c = require("crypto");
+###     s.utils.hmacSha256Sync = (k, ...m) => {
+###       const h = c.createHmac("sha256", Buffer.from(k));
+###       m.forEach(b => h.update(Buffer.from(b))); return h.digest();
+###     };
+###     const k1 = process.argv[1];
+###     const priv = s.utils.randomPrivateKey();
+###     const pub = s.getPublicKey(priv, true);
+###     const sig = s.signSync(Buffer.from(k1, "hex"), priv);
+###     console.log("sig=" + Buffer.from(sig).toString("hex"));
+###     console.log("key=" + Buffer.from(pub).toString("hex"));
+###   ' <K1_HEX>
+###
+### Then hit the callback the wallet would hit:
+GET http://localhost:3000/api/auth/lnurl/callback?tag=login&k1={{k1}}&sig={{sig}}&key={{key}}
 
-### Wallet balance
-GET http://localhost:3000/api/wallet-balance/alice@example.com
+### LNURL-auth: poll until authenticated; on success sets `quiz_session` cookie
+GET http://localhost:3000/api/auth/lnurl/status?k1={{k1}}
 
-### Start today's quiz (5 personalised questions)
+### LNURL-auth: who am I
+GET http://localhost:3000/api/auth/me
+
+### LNURL-auth: log out
+POST http://localhost:3000/api/auth/logout
+
+### Wallet provisioning (anonymous — for users without a Plan B Signet wallet)
+POST http://localhost:3000/api/wallet/create
+
+### Start today's quiz (5 personalised questions, requires session)
 POST http://localhost:3000/api/start
 Content-Type: application/json
 
-{
-  "lightningAddress": "alice@example.com"
-}
+{}
 
-### Submit answers (1500 sats reward on a perfect 5/5)
+### Submit answers (5/5 mints an LNURL-withdraw, requires session)
 POST http://localhost:3000/api/submit
 Content-Type: application/json
 
 {
-  "lightningAddress": "alice@example.com",
   "score": 5,
   "total": 5
 }
+
+### LNURL-withdraw: phase 1 — wallet asks for service params (returns withdrawRequest)
+GET http://localhost:3000/api/withdraw/lnurl?k1={{withdraw_k1}}
+
+### LNURL-withdraw: phase 2 — wallet pushes its bolt11 (server pays from Big Pot)
+GET http://localhost:3000/api/withdraw/lnurl?k1={{withdraw_k1}}&pr={{bolt11}}
+
+### LNURL-withdraw: poll claim status (requires session)
+GET http://localhost:3000/api/withdraw/status?k1={{withdraw_k1}}
+
+### LNURL-withdraw: most recent unclaimed withdraw for the current session
+GET http://localhost:3000/api/withdraw/active
 
 ### Attempts log
 GET http://localhost:3000/api/logs
