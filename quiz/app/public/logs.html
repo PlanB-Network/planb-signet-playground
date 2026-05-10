@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Audit Trail - Vincitori</title>
+  <style>
+    body { font-family: sans-serif; background: #1a1a1d; color: white; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 10px; border: 1px solid #444; text-align: left; }
+    th { background: #f7931a; color: black; }
+    .success { color: #28a745; font-weight: bold; }
+    .failed { color: #dc3545; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>🏆 Storico Vincitori</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Data e Ora</th>
+        <th>Importo (Sats)</th>
+        <th>ID Transazione</th>
+        <th>Stato</th>
+      </tr>
+    </thead>
+    <tbody id="tabella-corpo">
+      <tr><td colspan="5">Caricamento log...</td></tr>
+    </tbody>
+  </table>
+
+  <script>
+    async function caricaLogs() {
+      try {
+        const response = await fetch('/api/logs');
+        const data = await response.json();
+        const tbody = document.getElementById('tabella-corpo');
+        
+        if (!data.storico || data.storico.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5">Nessun vincitore ancora.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.storico.map(log => `
+          <tr>
+            <td>${log.id}</td>
+            <td>${new Date(log.timestamp).toLocaleString()}</td>
+            <td>${log.amount_sats} ⚡</td>
+            <td style="font-family: monospace; font-size: 12px;">${log.transaction_id || 'N/A'}</td>
+            <td class="${log.status === 'SUCCESS' ? 'success' : 'failed'}">${log.status}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        document.getElementById('tabella-corpo').innerHTML = '<tr><td colspan="5" class="failed">Errore di connessione al database.</td></tr>';
+      }
+    }
+    caricaLogs();
+  </script>
+</body>
+</html>

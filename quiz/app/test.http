@@ -1,0 +1,35 @@
+# Manual API smoke tests — open in REST Client (VS Code) or run via curl.
+
+### Create / re-fetch a custodial user wallet
+POST http://localhost:3000/api/create-user
+Content-Type: application/json
+
+{
+  "lightningAddress": "alice@example.com",
+  "username": "alice",
+  "email": ""
+}
+
+### Wallet balance
+GET http://localhost:3000/api/wallet-balance/alice@example.com
+
+### Start today's quiz (5 personalised questions)
+POST http://localhost:3000/api/start
+Content-Type: application/json
+
+{
+  "lightningAddress": "alice@example.com"
+}
+
+### Submit answers (1500 sats reward on a perfect 5/5)
+POST http://localhost:3000/api/submit
+Content-Type: application/json
+
+{
+  "lightningAddress": "alice@example.com",
+  "score": 5,
+  "total": 5
+}
+
+### Attempts log
+GET http://localhost:3000/api/logs

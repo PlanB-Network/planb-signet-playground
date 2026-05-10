@@ -1,0 +1,6 @@
+# SQLite winners log — runtime data, never commit.
+*.db
+*.db-journal
+
+# Local env (also covered globally, kept here for clarity).
+.env
