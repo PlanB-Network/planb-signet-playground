@@ -1,0 +1,16 @@
+services:
+  quiz:
+    build:
+      context: ../app
+    image: planb-quiz:latest
+    container_name: planb-quiz
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      DB_PATH: /data/winners_log.db
+      PORT: 3000
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data:/data

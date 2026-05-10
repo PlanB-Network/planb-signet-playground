@@ -60,93 +60,72 @@ npm start
 
 The server refuses to boot if `LNBITS_URL` or `LNBITS_ADMIN_KEY` is missing.
 
-## Deploy to the VPS (V1)
+## Deploy to the VPS
 
-The pattern below mirrors
-[`infrastructure/lnbits/README.md`](../../infrastructure/lnbits/README.md):
-systemd to keep the process alive, Caddy to terminate TLS.
-
-### 1. Install on the VPS
+Docker + Caddy. The deploy script lives in [`../deploy/`](../deploy/) — see
+[`../deploy/deploy.sh`](../deploy/deploy.sh).
 
 ```bash
 ssh alice@<host>
 cd /opt
 sudo git clone <this-repo>.git planb-signet-playground
 sudo chown -R alice:alice planb-signet-playground
-cd planb-signet-playground/quiz/app
-cp .env.example .env
-vim .env   # paste the real LNbits URL + admin key
-npm install --omit=dev
-mkdir -p /var/lib/planb-quiz   # persistent SQLite location
+cd planb-signet-playground/quiz/deploy
+./deploy.sh           # first run — prompts for LNBITS_URL + LNBITS_ADMIN_KEY
 ```
 
-Set `DB_PATH=/var/lib/planb-quiz/winners_log.db` in `.env` so the database
-survives a redeploy.
+What `deploy.sh` does on first run:
 
-### 2. systemd unit
+1. Prompts for `LNBITS_URL` and `LNBITS_ADMIN_KEY`, writes `.env.prod` (chmod 600).
+2. Builds the image (`quiz/app/Dockerfile`) and starts the container, binding
+   `127.0.0.1:3000` only — Caddy on the host fronts it.
+3. Appends a `quiz-signet.planb.academy { reverse_proxy 127.0.0.1:3000 }`
+   block to `/etc/caddy/Caddyfile` (if not already there) and reloads Caddy.
 
-`/etc/systemd/system/planb-quiz.service`:
-
-```ini
-[Unit]
-Description=Plan B Signet — Daily Quiz
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=alice
-WorkingDirectory=/opt/planb-signet-playground/quiz/app
-EnvironmentFile=/opt/planb-signet-playground/quiz/app/.env
-ExecStart=/usr/bin/node server.js
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
+To redeploy after a `git pull`:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now planb-quiz
-sudo journalctl -u planb-quiz -f
+cd /opt/planb-signet-playground/quiz/deploy
+./deploy.sh update
 ```
 
-### 3. Caddy reverse proxy
+Other commands: `./deploy.sh status`, `./deploy.sh logs`.
 
-Add to `/etc/caddy/Caddyfile`:
+The SQLite DB is bind-mounted at `quiz/deploy/data/winners_log.db` and survives
+container rebuilds.
 
-```caddy
-quiz-signet.planb.academy {
-    reverse_proxy 127.0.0.1:3000
-}
-```
-
-```bash
-sudo systemctl reload caddy
-```
-
-### 4. Smoke test
+### Smoke test
 
 ```bash
 curl -s https://quiz-signet.planb.academy/api/logs | jq
 ```
 
-## Open items before V1 ships
+## LNbits integration
+
+User and wallet provisioning uses the **admin core API** (no extension required):
+
+| Step                     | Endpoint                                   | Auth        |
+| ------------------------ | ------------------------------------------ | ----------- |
+| Create LNbits account    | `POST /users/api/v1/user`                  | Admin key   |
+| Create wallet for user   | `POST /users/api/v1/user/{user_id}/wallet` | Admin key   |
+| Create invoice on wallet | `POST /api/v1/payments` (out: false)       | Invoice key |
+| Big Pot pays invoice     | `POST /api/v1/payments` (out: true)        | Admin key   |
+| Read wallet balance      | `GET /api/v1/wallet`                       | Invoice key |
+
+The lightning address is stored in LNbits' `external_id` field (LNbits' username
+regex disallows `@` and `.com`). Local SQLite maps `lightning_address →
+lnbits_user_id, wallet_id, inkey, adminkey`.
+
+## Open items
 
 - [ ] Get the production `LNBITS_URL` + a fresh `LNBITS_ADMIN_KEY` from Squad 3
       (the key originally hardcoded in the student repo MUST be rotated — assume
       compromised).
-- [ ] Pick the public domain (default suggestion: `quiz-signet.planb.academy`)
-      and update Caddy + Squad 4's website link.
-- [ ] Tighten CORS — currently `cors()` allows any origin; restrict to the
-      Squad 4 website domain in production.
-- [ ] Decide on basic abuse limits (per-IP rate limit on `/api/start` and
-      `/api/create-user`). Today the only limit is "one attempt per Lightning
-      address per day".
-- [ ] Add a healthcheck endpoint (`GET /health` returning 200) for systemd /
-      Caddy / monitoring.
-- [ ] Review whether the question pool (21 questions from `btc101`) is enough
-      seasonal coverage for daily play, or if we should rotate across modules.
-- [ ] QA sign-off (Squad QA): full happy path on the VPS — register, take the
-      quiz, score 5/5, see sats land in both custodial and BYOW flows.
+- [ ] Point DNS A record `quiz-signet.planb.academy` → VPS IP.
+- [ ] Decide whether the question pool (21 questions from `btc101`) is enough
+      seasonal coverage for daily play, or rotate across modules.
+- [ ] **Next PR**: LNURL-auth login flow (replace the "type your LN address"
+      identity model with wallet-signed authentication). See conversation
+      thread for design.
+- [ ] QA sign-off: full happy path on the VPS — register, take the quiz, score
+      5/5, see sats land.
