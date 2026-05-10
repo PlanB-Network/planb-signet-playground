@@ -23,7 +23,7 @@ V0 imported from [`DanieleSK/quiz-planB`](https://github.com/DanieleSK/quiz-plan
 - [x] Minimal user identity — Lightning address (one identifier that doubles as a payout target, shared with the faucet flow)
 - [x] Winner log / audit trail (who got how many sats, when) — SQLite `attempts` + `payments` tables
 
-Open items for V1 / VPS deploy are tracked in [`app/README.md`](./app/README.md#open-items-before-v1-ships).
+Open items are tracked in [`app/README.md`](./app/README.md#open-items).
 
 ## Stack (as shipped)
 

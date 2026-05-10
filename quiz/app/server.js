@@ -437,31 +437,48 @@ app.post('/api/create-user', async (req, res) => {
       });
     }
 
-    // New user → create user + wallet on LNbits via User Manager
+    // New user → create LNbits account + wallet via the admin core API.
+    // Two calls because the core API splits user from wallet:
+    //   1. POST /users/api/v1/user                   → user account
+    //   2. POST /users/api/v1/user/{id}/wallet       → wallet with adminkey/inkey
+    // The lightning address is stored as `external_id` (LNbits' username regex
+    // rejects '@' and '.', so it can't be used as username here).
     try {
-      const lnbitsResponse = await fetch(`${LNBITS_URL}/usermanager/api/v1/users`, {
+      const createUserRes = await fetch(`${LNBITS_URL}/users/api/v1/user`, {
         method: 'POST',
         headers: {
           'X-Api-Key': LNBITS_ADMIN_KEY,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          user_name: lightningAddress,
-          wallet_name: `${lightningAddress}_wallet`,
-          email: email || '',
-          password: ''
+          external_id: lightningAddress,
+          email: email || null
         })
       });
 
-      if (!lnbitsResponse.ok) {
-        const errorText = await lnbitsResponse.text();
-        throw new Error(`LNbits User Manager error: ${errorText}`);
+      if (!createUserRes.ok) {
+        throw new Error(`LNbits create-user failed: ${await createUserRes.text()}`);
       }
 
-      const data = await lnbitsResponse.json();
-      console.log(`✅ LNbits user created for ${lightningAddress} → wallet ${data.wallets[0].id}`);
+      const userData = await createUserRes.json();
+      const lnbitsUserId = userData.id;
 
-      // Save to local DB with the three credentials kept separate
+      const createWalletRes = await fetch(`${LNBITS_URL}/users/api/v1/user/${lnbitsUserId}/wallet`, {
+        method: 'POST',
+        headers: {
+          'X-Api-Key': LNBITS_ADMIN_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: `${lightningAddress}_wallet` })
+      });
+
+      if (!createWalletRes.ok) {
+        throw new Error(`LNbits create-wallet failed: ${await createWalletRes.text()}`);
+      }
+
+      const walletData = await createWalletRes.json();
+      console.log(`✅ LNbits user+wallet created for ${lightningAddress} → wallet ${walletData.id}`);
+
       db.run(
         `INSERT INTO users
           (lightning_address, username, email,
@@ -471,10 +488,10 @@ app.post('/api/create-user', async (req, res) => {
           lightningAddress,
           username || '',
           email || '',
-          data.id,
-          data.wallets[0].id,
-          data.wallets[0].inkey,
-          data.wallets[0].adminkey
+          lnbitsUserId,
+          walletData.id,
+          walletData.inkey,
+          walletData.adminkey
         ],
         function(dbErr) {
           if (dbErr) console.error('❌ User save error:', dbErr.message);
@@ -487,8 +504,8 @@ app.post('/api/create-user', async (req, res) => {
         already_existed: false,
         lightningAddress,
         username: username || '',
-        lnbits_user_id: data.id,
-        lnbits_wallet_id: data.wallets[0].id,
+        lnbits_user_id: lnbitsUserId,
+        lnbits_wallet_id: walletData.id,
         message: `✅ Custodial wallet created for ${lightningAddress}!`
       });
 
